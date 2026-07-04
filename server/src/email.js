@@ -35,7 +35,7 @@ export const renderHtml = (d) => {
   const color = config.email.brandColor || "#c8991f";
   const room = esc(cleanRoom(d.roomName));
   const logo = config.email.logoUrl
-    ? `<img src="${esc(config.email.logoUrl)}" alt="${brand}" height="52" style="height:52px;width:auto;display:block;margin:0 auto;border:0;outline:none;">`
+    ? `<img src="${esc(config.email.logoUrl)}" alt="${brand}" height="80" style="height:80px;width:auto;max-width:300px;display:block;margin:0 auto;border:0;outline:none;">`
     : `<div style="font:700 22px/1.2 Georgia,serif;color:#1e1a17;text-align:center;">${brand}</div>`;
 
   const row = (label, value, strong = false) => `
@@ -78,11 +78,6 @@ export const renderHtml = (d) => {
             ${row("Total pago", `<span style="color:${color};">${esc(brl(d.totalPrice))}</span>`, true)}
           </table>
         </td></tr>
-        <tr><td style="padding:20px 32px 8px;">
-          <p style="margin:0;color:#4a4a4a;font:400 14px/1.6 Arial,sans-serif;">
-            No check-in, basta apresentar um documento com foto. Precisa alterar algo ou tem alguma dúvida? É só responder este e-mail que a gente ajuda.
-          </p>
-        </td></tr>
         ${contactBits ? `<tr><td style="padding:16px 32px 0;"><p style="margin:0;color:#6b6b6b;font:400 13px/1.6 Arial,sans-serif;">${contactBits}</p></td></tr>` : ""}
         <tr><td style="padding:24px 32px 32px;">
           <p style="margin:0;color:#9a9a9a;font:400 12px/1.5 Arial,sans-serif;">
@@ -110,7 +105,6 @@ const renderText = (d) =>
     `Pagamento:  ${methodLabel(d.method)}`,
     `Total pago: ${brl(d.totalPrice)}`,
     ``,
-    `No check-in, apresente um documento com foto. Dúvidas? Responda este e-mail.`,
     config.email.phone ? `Contato: ${config.email.phone}` : "",
     config.email.siteUrl || ""
   ].filter((l) => l !== undefined).join("\n");
