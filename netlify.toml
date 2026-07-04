@@ -1,0 +1,14 @@
+# Netlify — apenas o site estático (frontend).
+# O backend roda no Railway (pasta /server). O front fala com ele via
+# window.VZ_CHECKOUT_API definido em checkout.html.
+
+[build]
+  publish = "."
+  command = ""
+
+# O Vila ainda não tem site institucional — o checkout É a página inicial.
+# Serve checkout.html na raiz "/" (status 200 = rewrite, mantém a URL limpa).
+[[redirects]]
+  from = "/"
+  to = "/checkout.html"
+  status = 200

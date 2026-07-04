@@ -1,0 +1,32 @@
+# Dependências
+node_modules/
+server/node_modules/
+
+# Segredos — NUNCA versionar nem publicar
+.env
+*.env
+server/.env
+
+# Material sensível de pagamento (certificado/chave do PIX Itaú, credenciais)
+pix/
+*.eml
+*.pem
+*.key
+*.crt
+*.csr
+*.pfx
+
+# Netlify
+.netlify/
+
+# Dev / lixo
+.playwright-cli/
+output/
+output-*.txt
+*.log
+*.zip
+
+# Imagens de origem da marca na RAIZ (mantemos só as versões em assets/).
+# Barra inicial = só na raiz, para NÃO ignorar assets/icon.png etc.
+/logo (header).png
+/icon.png

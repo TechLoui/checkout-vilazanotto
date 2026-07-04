@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>Reserva e pagamento · Vila Zanotto Piri</title>
+    <link rel="icon" type="image/png" href="assets/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Lora:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="checkout.css?v=20260701-vila2">
+    <!-- Backend (Railway): TROQUE pela URL pública do serviço Railway do Vila quando criá-lo. -->
+    <script>
+      if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+        window.VZ_CHECKOUT_API = "https://checkout-vilazanotto-production.up.railway.app/api";
+      }
+    </script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+    <script src="checkout.js?v=20260701-vila2" defer></script>
+  </head>
+  <body>
+    <div class="checkout-bg" aria-hidden="true"></div>
+
+    <header class="checkout-header">
+      <a class="brand brand--logo-only" href="#" aria-label="Vila Zanotto Piri">
+        <img src="assets/logo.png" alt="Vila Zanotto Piri">
+      </a>
+      <div class="header-actions">
+        <a class="back-link" href="#top">
+          <i data-lucide="arrow-up" aria-hidden="true"></i>
+          Início
+        </a>
+        <span class="secure-badge">
+          <i data-lucide="shield-check" aria-hidden="true"></i>
+          Checkout 100% seguro
+        </span>
+      </div>
+    </header>
+
+    <main class="checkout-wrap">
+      <a class="checkout-logo" href="#" aria-label="Vila Zanotto Piri">
+        <img src="assets/logo.png" alt="Vila Zanotto Piri">
+      </a>
+      <nav class="steps" aria-label="Etapas da reserva">
+        <span class="step-chip is-active" data-step="1">
+          <span class="step-index">1</span>
+          <span><i data-lucide="calendar-search" aria-hidden="true"></i> Disponibilidade</span>
+        </span>
+        <span class="step-chip" data-step="2">
+          <span class="step-index">2</span>
+          <span><i data-lucide="bed-double" aria-hidden="true"></i> Acomodação</span>
+        </span>
+        <span class="step-chip" data-step="3">
+          <span class="step-index">3</span>
+          <span><i data-lucide="credit-card" aria-hidden="true"></i> Pagamento</span>
+        </span>
+        <span class="step-chip" data-step="4">
+          <span class="step-index">4</span>
+          <span><i data-lucide="check-circle" aria-hidden="true"></i> Confirmação</span>
+        </span>
+      </nav>
+
+      <div id="notice" class="notice is-hidden" role="alert"></div>
+
+      <div class="layout">
+        <div class="flow-column">
+          <section class="panel" data-view="1" aria-labelledby="step-1-title">
+            <div class="panel-heading">
+              <span class="panel-kicker">Etapa 1 de 4</span>
+              <h2 id="step-1-title" data-searchtitle>Quando você vem?</h2>
+            </div>
+
+            <form id="search-form">
+              <!-- sub-passo: datas -->
+              <div class="searchstep" data-searchstep="dates">
+                <div class="field col-2">
+                  <div class="rangecal" data-cal>
+                    <div class="rangecal-summary">
+                      <div class="rc-pill" data-cal-infield>
+                        <small>Check-in</small>
+                        <strong data-cal-in>Selecionar</strong>
+                      </div>
+                      <i data-lucide="arrow-right" aria-hidden="true"></i>
+                      <div class="rc-pill" data-cal-outfield>
+                        <small>Check-out</small>
+                        <strong data-cal-out>Selecionar</strong>
+                      </div>
+                    </div>
+                    <p class="rangecal-hint" data-cal-hint>Selecione a data de <b>check-in</b>.</p>
+                    <div class="rangecal-head">
+                      <button type="button" class="rc-nav" data-cal-prev aria-label="Mês anterior"><i data-lucide="chevron-left" aria-hidden="true"></i></button>
+                      <strong data-cal-title>—</strong>
+                      <button type="button" class="rc-nav" data-cal-next aria-label="Próximo mês"><i data-lucide="chevron-right" aria-hidden="true"></i></button>
+                    </div>
+                    <div class="rangecal-grid" data-cal-grid></div>
+                  </div>
+                  <input type="hidden" id="arrival" name="arrival_date">
+                  <input type="hidden" id="departure" name="departure_date">
+                </div>
+                <div class="form-actions">
+                  <button class="btn btn-primary" type="button" data-search-next>
+                    Continuar
+                    <i data-lucide="arrow-right" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- sub-passo: hóspedes -->
+              <div class="searchstep is-hidden" data-searchstep="guests">
+                <div class="grid">
+                  <div class="field">
+                    <label>Adultos <span class="hint">maiores de 13 anos</span></label>
+                    <div class="stepper" data-min="1" data-max="9">
+                      <button type="button" data-dec aria-label="Menos adultos">-</button>
+                      <input id="adults" name="adults" type="text" inputmode="numeric" value="2" readonly aria-live="polite">
+                      <button type="button" data-inc aria-label="Mais adultos">+</button>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>Crianças <span class="hint">0 a 12 anos</span></label>
+                    <div class="stepper" data-min="0" data-max="6">
+                      <button type="button" data-dec aria-label="Menos crianças">-</button>
+                      <input id="kids" name="kids" type="text" inputmode="numeric" value="0" readonly aria-live="polite">
+                      <button type="button" data-inc aria-label="Mais crianças">+</button>
+                    </div>
+                  </div>
+                  <div class="field col-2 is-hidden" id="ages-wrap">
+                    <label>Idade das crianças</label>
+                    <div class="grid nested-grid" id="ages-inputs"></div>
+                  </div>
+                </div>
+                <div class="form-actions two-actions">
+                  <button class="btn btn-ghost" type="button" data-search-back>
+                    <i data-lucide="arrow-left" aria-hidden="true"></i>
+                    Voltar
+                  </button>
+                  <button class="btn btn-primary" type="submit" id="search-btn">
+                    <i data-lucide="search" aria-hidden="true"></i>
+                    Buscar quartos
+                  </button>
+                </div>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel is-hidden" data-view="2" aria-labelledby="step-2-title">
+            <div class="panel-heading split">
+              <div>
+                <span class="panel-kicker">Etapa 2 de 4</span>
+                <h2 id="step-2-title">Acomodações disponíveis</h2>
+              </div>
+              <button class="btn btn-ghost btn-inline" type="button" id="back-to-search">
+                <i data-lucide="arrow-left" aria-hidden="true"></i>
+                Alterar datas
+              </button>
+            </div>
+            <div class="room-list" id="room-list" aria-live="polite"></div>
+            <div class="room-carousel-nav" data-room-nav>
+              <button class="rcn-btn" type="button" data-rn-prev aria-label="Quarto anterior"><i data-lucide="chevron-left" aria-hidden="true"></i></button>
+              <div class="rcn-dots" data-rn-dots></div>
+              <button class="rcn-btn" type="button" data-rn-next aria-label="Próximo quarto"><i data-lucide="chevron-right" aria-hidden="true"></i></button>
+            </div>
+          </section>
+
+          <section class="panel is-hidden" data-view="3" aria-labelledby="step-3-title">
+            <div class="panel-heading">
+              <span class="panel-kicker">Etapa 3 de 4</span>
+              <h2 id="step-3-title" data-paystep-title>Forma de pagamento</h2>
+            </div>
+
+            <ol class="paysteps" aria-label="Sub-etapas do pagamento">
+              <li data-paystep-dot="method" class="is-active"><span class="ps-n">1</span> Forma</li>
+              <li data-paystep-dot="guest"><span class="ps-n">2</span> Dados</li>
+              <li data-paystep-dot="pay"><span class="ps-n">3</span> Pagamento</li>
+            </ol>
+
+            <div class="pay-review" aria-label="Revisão da reserva">
+              <div class="pay-review-head">
+                <strong data-pr-room>Sua reserva</strong>
+                <span data-pr-total>—</span>
+              </div>
+              <div class="pay-review-rows">
+                <div><span>Check-in</span><span data-pr-in>—</span></div>
+                <div><span>Check-out</span><span data-pr-out>—</span></div>
+                <div><span>Noites</span><span data-pr-nights>—</span></div>
+                <div><span>Hóspedes</span><span data-pr-guests>—</span></div>
+              </div>
+            </div>
+
+            <form id="checkout-form" autocomplete="on">
+              <!-- SUB-ETAPA 1: forma de pagamento -->
+              <div class="paystep" data-paystep="method">
+                <div class="pay-choice">
+                  <button type="button" class="pay-opt is-active" data-pay-method="pix" aria-pressed="true">
+                    <span class="pay-opt-ic"><i data-lucide="qr-code" aria-hidden="true"></i></span>
+                    <span class="pay-opt-txt">
+                      <strong>PIX</strong>
+                      <small>Aprovação na hora · QR Code ou copia e cola</small>
+                    </span>
+                    <span class="pay-opt-check"><i data-lucide="check" aria-hidden="true"></i></span>
+                  </button>
+                  <button type="button" class="pay-opt" data-pay-method="card" aria-pressed="false">
+                    <span class="pay-opt-ic"><i data-lucide="credit-card" aria-hidden="true"></i></span>
+                    <span class="pay-opt-txt">
+                      <strong>Cartão de crédito</strong>
+                      <small>Em até 6x sem juros</small>
+                    </span>
+                    <span class="pay-opt-check"><i data-lucide="check" aria-hidden="true"></i></span>
+                  </button>
+                </div>
+                <div class="form-actions two-actions">
+                  <button class="btn btn-ghost" type="button" id="back-to-rooms">
+                    <i data-lucide="arrow-left" aria-hidden="true"></i>
+                    Voltar
+                  </button>
+                  <button class="btn btn-primary" type="button" data-paynext="guest">
+                    Continuar
+                    <i data-lucide="arrow-right" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- SUB-ETAPA 2: dados do hóspede (3 mini-etapas) -->
+              <div class="paystep is-hidden" data-paystep="guest">
+                <!-- 2a: nome -->
+                <div class="gueststep" data-gueststep="name">
+                  <fieldset class="form-block">
+                    <legend>Seu nome</legend>
+                    <div class="grid">
+                      <div class="field col-2">
+                        <label for="g-first">Nome*</label>
+                        <input id="g-first" name="first_name" autocomplete="given-name" required>
+                      </div>
+                      <div class="field col-2">
+                        <label for="g-last">Sobrenome</label>
+                        <input id="g-last" name="last_name" autocomplete="family-name">
+                      </div>
+                    </div>
+                  </fieldset>
+                  <div class="form-actions two-actions">
+                    <button class="btn btn-ghost" type="button" data-payback="method">
+                      <i data-lucide="arrow-left" aria-hidden="true"></i> Voltar
+                    </button>
+                    <button class="btn btn-primary" type="button" data-guestnext="contact">
+                      Continuar <i data-lucide="arrow-right" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 2b: contato -->
+                <div class="gueststep is-hidden" data-gueststep="contact">
+                  <fieldset class="form-block">
+                    <legend>Contato</legend>
+                    <div class="grid">
+                      <div class="field col-2">
+                        <label for="g-phone">Telefone (com DDD)*</label>
+                        <input id="g-phone" name="phone" inputmode="tel" autocomplete="tel" placeholder="(62) 99999-9999" required>
+                      </div>
+                      <div class="field col-2">
+                        <label for="g-email">E-mail</label>
+                        <input id="g-email" name="email" type="email" autocomplete="email">
+                      </div>
+                    </div>
+                  </fieldset>
+                  <div class="form-actions two-actions">
+                    <button class="btn btn-ghost" type="button" data-guestback="name">
+                      <i data-lucide="arrow-left" aria-hidden="true"></i> Voltar
+                    </button>
+                    <button class="btn btn-primary" type="button" data-guestnext="doc">
+                      Continuar <i data-lucide="arrow-right" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 2c: documento -->
+                <div class="gueststep is-hidden" data-gueststep="doc">
+                  <fieldset class="form-block">
+                    <legend>Documento <span class="hint">(opcional)</span></legend>
+                    <div class="grid">
+                      <div class="field col-2">
+                        <label for="g-doctype">Tipo de documento</label>
+                        <select id="g-doctype" name="document_type">
+                          <option value="">-</option>
+                          <option value="cpf">CPF</option>
+                          <option value="rg">RG</option>
+                          <option value="passport">Passaporte</option>
+                        </select>
+                      </div>
+                      <div class="field col-2">
+                        <label for="g-doc">Documento</label>
+                        <input id="g-doc" name="document" inputmode="numeric">
+                      </div>
+                    </div>
+                  </fieldset>
+                  <div class="form-actions two-actions">
+                    <button class="btn btn-ghost" type="button" data-guestback="contact">
+                      <i data-lucide="arrow-left" aria-hidden="true"></i> Voltar
+                    </button>
+                    <button class="btn btn-primary" type="button" data-paynext="pay">
+                      Continuar <i data-lucide="arrow-right" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- SUB-ETAPA 3: pagamento (PIX ou cartão) -->
+              <div class="paystep is-hidden" data-paystep="pay">
+                <p class="notice info">
+                  <i data-lucide="lock" aria-hidden="true"></i>
+                  Seus dados de cartão trafegam criptografados e não são armazenados em nosso site.
+                </p>
+
+                <div class="pay-pane" data-pane="pix">
+                  <p class="pay-hint">
+                    <i data-lucide="zap" aria-hidden="true"></i>
+                    Gere o QR Code e pague pelo app do seu banco — a reserva é confirmada na hora.
+                  </p>
+                  <div class="pix-result is-hidden" data-pix-result>
+                    <div class="pix-qr"><img data-pix-img alt="QR Code do PIX"></div>
+                    <div class="pix-side">
+                      <span class="pix-label">Pix copia e cola</span>
+                      <div class="pix-copy">
+                        <input type="text" readonly data-pix-code aria-label="Código PIX copia e cola">
+                        <button type="button" class="btn-copy" data-pix-copy><i data-lucide="copy" aria-hidden="true"></i> Copiar</button>
+                      </div>
+                      <p class="pix-status" data-pix-status><span class="spinner spinner-dark"></span> Aguardando pagamento…</p>
+                      <p class="pix-timer" data-pix-timer></p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pay-pane is-hidden" data-pane="card">
+                  <div class="card-preview" data-card-preview data-brand="">
+                    <div class="cardp-top">
+                      <span class="cardp-chip" aria-hidden="true"></span>
+                      <span class="cardp-brand" data-cardp-brand></span>
+                    </div>
+                    <div class="cardp-number" data-cardp-number>•••• •••• •••• ••••</div>
+                    <div class="cardp-bottom">
+                      <div class="cardp-fld"><small>Titular</small><span data-cardp-name>NOME COMPLETO</span></div>
+                      <div class="cardp-fld cardp-exp"><small>Validade</small><span data-cardp-exp>MM/AA</span></div>
+                    </div>
+                  </div>
+                  <fieldset class="form-block">
+                    <legend>Cartão de crédito</legend>
+                    <div class="grid">
+                      <div class="field col-2">
+                        <label for="c-number">Número do cartão*</label>
+                        <input id="c-number" name="cardNumber" inputmode="numeric" autocomplete="cc-number" placeholder="0000 0000 0000 0000" maxlength="23">
+                      </div>
+                      <div class="field col-2">
+                        <label for="c-name">Nome impresso no cartão*</label>
+                        <input id="c-name" name="holderName" autocomplete="cc-name">
+                      </div>
+                      <div class="field">
+                        <label for="c-exp">Validade (MM/AA)*</label>
+                        <input id="c-exp" name="exp" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/AA" maxlength="5">
+                      </div>
+                      <div class="field">
+                        <label for="c-cvv">CVV*</label>
+                        <input id="c-cvv" name="cvv" inputmode="numeric" autocomplete="cc-csc" placeholder="123" maxlength="4">
+                      </div>
+                      <div class="field col-2">
+                        <label for="c-inst">Parcelas</label>
+                        <select id="c-inst" name="installments"></select>
+                      </div>
+                    </div>
+                  </fieldset>
+                </div>
+
+                <div class="form-actions two-actions">
+                  <button class="btn btn-ghost" type="button" data-payback="guest">
+                    <i data-lucide="arrow-left" aria-hidden="true"></i>
+                    Voltar
+                  </button>
+                  <button class="btn btn-primary" type="submit" id="pay-btn">
+                    <i data-lucide="lock" aria-hidden="true"></i>
+                    <span class="label">Pagar e reservar</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel is-hidden" data-view="4" aria-labelledby="step-4-title">
+            <div class="success-card">
+              <div class="check"><i data-lucide="check" aria-hidden="true"></i></div>
+              <span class="panel-kicker">Etapa 4 de 4</span>
+              <h2 id="step-4-title">Reserva confirmada!</h2>
+              <p class="lede">Recebemos seu pagamento e sua reserva foi criada com sucesso.</p>
+              <div class="booking-id" id="booking-id"></div>
+              <p class="success-email" data-success-email></p>
+              <div id="success-details" class="summary-body success-details"></div>
+              <div class="form-actions">
+                <a class="btn btn-primary" href="index.html">Voltar ao site</a>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="summary" id="summary" aria-label="Resumo da reserva">
+          <figure class="summary-media">
+            <img id="sum-image" src="assets/logo.png" alt="Vila Zanotto Piri">
+          </figure>
+          <div class="summary-head">
+            <small>Resumo da reserva</small>
+            <strong id="sum-room">Sua reserva</strong>
+          </div>
+          <div class="summary-body">
+            <div class="summary-row"><span>Check-in</span><span id="sum-in">-</span></div>
+            <div class="summary-row"><span>Check-out</span><span id="sum-out">-</span></div>
+            <div class="summary-row"><span>Noites</span><span id="sum-nights">-</span></div>
+            <div class="summary-row"><span>Hóspedes</span><span id="sum-guests">-</span></div>
+            <div class="summary-total"><span>Total</span><strong id="sum-total">-</strong></div>
+          </div>
+          <div class="summary-trust">
+            <span><i data-lucide="shield-check" aria-hidden="true"></i> Pagamento criptografado</span>
+            <span><i data-lucide="lock" aria-hidden="true"></i> Checkout seguro</span>
+          </div>
+        </aside>
+      </div>
+    </main>
+
+    <div class="cz-modal" data-noavail hidden>
+      <button class="cz-modal-backdrop" type="button" data-noavail-close aria-label="Fechar"></button>
+      <div class="cz-modal-card" role="dialog" aria-modal="true" aria-labelledby="noavail-title">
+        <span class="cz-modal-icon"><i data-lucide="calendar-x" aria-hidden="true"></i></span>
+        <h3 id="noavail-title">Sem disponibilidade nessas datas</h3>
+        <p>Não encontramos acomodações para o período e o número de hóspedes selecionados. Escolha outras datas ou ajuste os hóspedes e tente novamente.</p>
+        <button class="btn btn-primary" type="button" data-noavail-close>
+          <i data-lucide="calendar-search" aria-hidden="true"></i>
+          Escolher outras datas
+        </button>
+      </div>
+    </div>
+  </body>
+</html>
