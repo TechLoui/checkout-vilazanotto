@@ -487,7 +487,7 @@ const initReserveEmbed = () => {
   const mobileLayout = window.matchMedia("(max-width: 680px)");
   const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-  const allowedParams = ["arrival_date", "departure_date", "entrada", "saida", "adults", "hospedes", "kids", "children"];
+  const allowedParams = ["arrival_date", "departure_date", "entrada", "saida", "adults", "hospedes", "kids", "children", "_askSI", "_askSi", "askSI"];
   const pageParams = new URLSearchParams(window.location.search);
   const frameUrl = new URL(frame.getAttribute("src"), document.baseURI);
   const frameOrigin = frameUrl.origin;

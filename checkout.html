@@ -18,7 +18,7 @@
       }
     </script>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-    <script src="checkout.js?v=20260828-vila7" defer></script>
+    <script src="checkout.js?v=20260828-vila8" defer></script>
   </head>
   <body data-step="1" data-topic="availability:dates">
     <a class="skip-link" href="#checkout-content">Ir para o conteúdo da reserva</a>
@@ -101,8 +101,12 @@
                     <p class="rangecal-hint" data-cal-hint>Selecione a data de <b>check-in</b>.</p>
                     <div class="rangecal-head">
                       <button type="button" class="rc-nav" data-cal-prev aria-label="Mês anterior"><i data-lucide="chevron-left" aria-hidden="true"></i></button>
-                      <strong data-cal-title>—</strong>
+                      <button type="button" class="rc-title-btn" data-cal-title aria-haspopup="true" aria-expanded="false" aria-label="Ir para outro mês/ano">—</button>
                       <button type="button" class="rc-nav" data-cal-next aria-label="Próximo mês"><i data-lucide="chevron-right" aria-hidden="true"></i></button>
+                    </div>
+                    <div class="rangecal-jump is-hidden" data-cal-jump>
+                      <select data-cal-jump-month aria-label="Ir para o mês"></select>
+                      <select data-cal-jump-year aria-label="Ir para o ano"></select>
                     </div>
                     <div class="rangecal-grid" data-cal-grid></div>
                   </div>
@@ -121,15 +125,15 @@
               <div class="searchstep is-hidden" data-searchstep="guests">
                 <div class="grid">
                   <div class="field">
-                    <label for="adults">Adultos <span class="hint">maiores de 13 anos</span></label>
+                    <label for="adults">Adultos e Menores de Idade <span class="hint">a partir de 6 anos</span></label>
                     <div class="stepper" data-min="1" data-max="9">
-                      <button type="button" data-dec aria-label="Menos adultos">-</button>
+                      <button type="button" data-dec aria-label="Menos adultos e menores de idade">-</button>
                       <input id="adults" name="adults" type="text" inputmode="numeric" value="2" readonly aria-live="polite">
-                      <button type="button" data-inc aria-label="Mais adultos">+</button>
+                      <button type="button" data-inc aria-label="Mais adultos e menores de idade">+</button>
                     </div>
                   </div>
                   <div class="field">
-                    <label for="kids">Crianças <span class="hint">0 a 12 anos</span></label>
+                    <label for="kids">Crianças <span class="hint">0 a 5 anos</span></label>
                     <div class="stepper" data-min="0" data-max="6">
                       <button type="button" data-dec aria-label="Menos crianças">-</button>
                       <input id="kids" name="kids" type="text" inputmode="numeric" value="0" readonly aria-live="polite">
@@ -404,6 +408,11 @@
               <p class="lede">Pagamento aprovado e reserva confirmada.</p>
               <div class="booking-id" id="booking-id"></div>
               <p class="success-email" data-success-email></p>
+              <p class="success-support">
+                <i data-lucide="message-circle" aria-hidden="true"></i>
+                Para dúvidas, nosso WhatsApp de Suporte é o
+                <a href="https://wa.me/5564984398408" target="_blank" rel="noreferrer">(64) 98439-8408</a>
+              </p>
               <div id="success-details" class="summary-body success-details"></div>
               <div class="form-actions">
                 <a class="btn btn-primary" href="index.html" target="_top">Voltar ao site</a>

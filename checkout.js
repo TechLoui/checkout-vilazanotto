@@ -297,7 +297,7 @@ const prefillFromQuery = () => {
     $("#kids").value = String(Math.min(Number(kids), 6));
     buildAgesInputs();
     $$("#ages-inputs [data-age]").forEach((input, index) => {
-      if (ages[index] != null) input.value = String(Math.max(0, Math.min(12, Number(ages[index]) || 0)));
+      if (ages[index] != null) input.value = String(Math.max(0, Math.min(5, Number(ages[index]) || 0)));
     });
   }
 
@@ -318,7 +318,7 @@ const buildAgesInputs = () => {
     field.className = "field";
     const inputId = `child-age-${i + 1}`;
     field.innerHTML = `<label for="${inputId}">Idade da criança ${i + 1}</label>
-      <input id="${inputId}" name="ages[]" type="number" min="0" max="12" value="6" data-age inputmode="numeric" required>`;
+      <input id="${inputId}" name="ages[]" type="number" min="0" max="5" value="5" data-age inputmode="numeric" required>`;
     container.appendChild(field);
   }
 };
@@ -1290,7 +1290,7 @@ const restoreSearchInputs = (search) => {
   buildAgesInputs();
   (search.ages || []).forEach((age, index) => {
     const input = $$("#ages-inputs [data-age]")[index];
-    if (input) input.value = String(age);
+    if (input) input.value = String(Math.max(0, Math.min(5, Number(age) || 0)));
   });
 };
 
@@ -1530,6 +1530,53 @@ const initCalendar = () => {
   $("[data-cal-next]", root).addEventListener("click", () => {
     view = new Date(view.getFullYear(), view.getMonth() + 1, 1);
     render();
+  });
+
+  // Atalho "ir para mês/ano": evita clicar em ">" dezenas de vezes pra uma
+  // reserva distante. Abre dois selects (mês, ano) ao tocar no título.
+  const jumpBox = $("[data-cal-jump]", root);
+  const jumpMonth = $("[data-cal-jump-month]", root);
+  const jumpYear = $("[data-cal-jump-year]", root);
+  const YEARS_AHEAD = 2; // cobre reservas com bastante antecedência
+
+  const fillJumpOptions = () => {
+    jumpMonth.innerHTML = MONTHS
+      .map((m, i) => `<option value="${i}">${m.charAt(0).toUpperCase() + m.slice(1)}</option>`)
+      .join("");
+    const startYear = todayD.getFullYear();
+    jumpYear.innerHTML = Array.from({ length: YEARS_AHEAD + 1 }, (_, i) => startYear + i)
+      .map((y) => `<option value="${y}">${y}</option>`)
+      .join("");
+  };
+
+  const openJump = () => {
+    fillJumpOptions();
+    jumpMonth.value = String(view.getMonth());
+    jumpYear.value = String(view.getFullYear());
+    jumpBox.classList.remove("is-hidden");
+    title.setAttribute("aria-expanded", "true");
+  };
+
+  const closeJump = () => {
+    jumpBox.classList.add("is-hidden");
+    title.setAttribute("aria-expanded", "false");
+  };
+
+  const goToJumpSelection = () => {
+    const min = new Date(todayD.getFullYear(), todayD.getMonth(), 1);
+    const target = new Date(Number(jumpYear.value), Number(jumpMonth.value), 1);
+    view = target < min ? min : target;
+    render();
+  };
+
+  title.addEventListener("click", () => {
+    if (jumpBox.classList.contains("is-hidden")) openJump();
+    else closeJump();
+  });
+  jumpMonth.addEventListener("change", goToJumpSelection);
+  jumpYear.addEventListener("change", goToJumpSelection);
+  document.addEventListener("click", (e) => {
+    if (!jumpBox.classList.contains("is-hidden") && !jumpBox.contains(e.target) && e.target !== title) closeJump();
   });
 
   sync();
