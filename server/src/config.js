@@ -63,10 +63,14 @@ export const config = {
     //   "total"     -> preço já é o total da estadia (padrão, igual ao exemplo da doc)
     //   "per_night" -> preço é por diária; multiplicamos pelo nº de noites
     priceMode: process.env.ARTAX_PRICE_MODE === "per_night" ? "per_night" : "total",
-    // Métodos de pagamento do Artax (GET /payment-methods):
-    //   5957 = REDE | PIX · 8473 = REDE | CARTÃO DE CRÉDITO
-    paymentMethodPix: Number(process.env.ARTAX_PM_PIX) || 5957,
-    paymentMethodCard: Number(process.env.ARTAX_PM_CARD) || 8473,
+    // Métodos de pagamento do Artax (GET /payment-methods) — conta da Villa
+    // Zanotto Piri. IMPORTANTE: são específicos por conta Artax, não usar os
+    // mesmos IDs de outra propriedade (confirmado em 28/08/2026 — os valores
+    // antigos eram os da Casa Zanotto e faziam o lançamento do pagamento
+    // falhar silenciosamente, reserva era criada mas o pagamento não).
+    //   5967 = REDE | PIX · 5962 = REDE | CARTÃO DE CRÉDITO
+    paymentMethodPix: Number(process.env.ARTAX_PM_PIX) || 5967,
+    paymentMethodCard: Number(process.env.ARTAX_PM_CARD) || 5962,
     // Centro de custo opcional para os pagamentos (deixe vazio se não usar).
     costCenterId: Number(process.env.ARTAX_COST_CENTER_ID) || null,
     // Status com que a reserva é criada: 1 Pré-reserva · 2 Confirmado · 3 Hospedado
