@@ -3431,6 +3431,10 @@ main > section[id] {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .journal-item-wide[data-gallery-category="flats"] {
+    grid-column: span 1;
+  }
+
   .guest-visual {
     min-height: 620px;
   }
@@ -5721,10 +5725,10 @@ html.js.reveal-ready [data-reveal].is-visible {
 
   html.js .hero-mobile-brand {
     display: grid;
-    place-items: start center;
+    place-items: start start;
     width: min(300px, 82vw);
     height: clamp(64px, 20vw, 76px);
-    margin: 0 auto 20px;
+    margin: 0 0 20px;
     overflow: hidden;
     line-height: 0;
   }

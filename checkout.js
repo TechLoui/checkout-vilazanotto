@@ -10,7 +10,7 @@ const API_BASE = (
   window.VZ_CHECKOUT_API ||
   (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "http://localhost:8080/api" : "/api")
 ).replace(/\/$/, "");
-let INSTALLMENTS_MAX = 6;
+let INSTALLMENTS_MAX = 4;
 const DEFAULT_SUMMARY_IMAGE = "assets/logo.png";
 const LOGO_IMAGE = "assets/logo.png";
 const FALLBACK_ROOM_IMAGES = [
@@ -1477,7 +1477,14 @@ const initCalendar = () => {
   };
 
   const pick = (d) => {
-    if (selecting === "in") {
+    if (arrival && departure) {
+      // Já tinha um intervalo completo selecionado — qualquer clique novo
+      // reinicia a escolha (o dia clicado vira o novo check-in), em vez de
+      // só empurrar o check-out.
+      arrival = d;
+      departure = null;
+      selecting = "out";
+    } else if (selecting === "in") {
       arrival = d;
       if (departure && departure <= d) departure = null;
       selecting = "out"; // avança automaticamente p/ o passo 2
