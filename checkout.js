@@ -1,5 +1,5 @@
 /* ===========================================================================
-   Checkout transparente — Vila Zanotto Piri
+   Checkout transparente — Villa Zanotto Piri
    Fluxo: disponibilidade -> escolha do quarto -> dados+cartão -> confirmação.
    O backend (Node) cobra na Rede e cria a reserva no Artax só se aprovado.
    ===========================================================================
@@ -10,12 +10,42 @@ const API_BASE = (
   window.VZ_CHECKOUT_API ||
   (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "http://localhost:8080/api" : "/api")
 ).replace(/\/$/, "");
-const INSTALLMENTS_MAX = 6;
+let INSTALLMENTS_MAX = 6;
 const DEFAULT_SUMMARY_IMAGE = "assets/logo.png";
 const LOGO_IMAGE = "assets/logo.png";
-// Vila ainda não tem galeria própria; o brasão serve de placeholder quando o
-// Artax não devolve foto do quarto.
-const FALLBACK_ROOM_IMAGES = ["assets/icon.png"];
+const FALLBACK_ROOM_IMAGES = [
+  "assets/gallery/5-2-scaled.webp",
+  "assets/gallery/Flat-4-scaled.webp",
+  "assets/gallery/1-2-1-scaled.webp",
+  "assets/gallery/10-2-scaled.webp",
+  "assets/gallery/Flat-43-scaled.webp",
+  "assets/gallery/13-1-scaled.webp",
+  "assets/gallery/Flat-36-scaled.webp",
+  "assets/gallery/Flat-45-scaled.webp"
+];
+
+// Mantém o seletor de parcelas sincronizado com MAX_INSTALLMENTS do Railway.
+// O fallback preserva o checkout caso o backend ainda não tenha /api/config.
+const loadPublicConfig = async () => {
+  try {
+    const response = await fetch(`${API_BASE}/config`);
+    if (!response.ok) return;
+    const data = await readJSON(response);
+    const max = Number(data.maxInstallments);
+    if (Number.isInteger(max) && max >= 1 && max <= 12) {
+      const selectedInstallments = Number($("#c-inst")?.value) || 1;
+      INSTALLMENTS_MAX = max;
+      const installmentLabel = $("[data-card-installments]");
+      if (installmentLabel) installmentLabel.textContent = max === 1 ? "Pagamento à vista" : `Em até ${max}x sem juros`;
+      if (state.selection) {
+        buildInstallments(state.selection.price);
+        if (selectedInstallments <= max) $("#c-inst").value = String(selectedInstallments);
+      }
+    }
+  } catch (_) {
+    // Configuração pública é um aprimoramento; falhas não interrompem a reserva.
+  }
+};
 
 const brl = (value) =>
   Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -32,6 +62,14 @@ const escapeHTML = (value) =>
     "'": "&#39;"
   }[char]));
 
+const readJSON = async (response) => {
+  try {
+    return await response.json();
+  } catch (_) {
+    throw new Error("O serviço de reservas respondeu de forma inesperada. Tente novamente em instantes.");
+  }
+};
+
 const encodeRoomData = (room) => encodeURIComponent(JSON.stringify(room));
 const decodeRoomData = (value) => JSON.parse(decodeURIComponent(value));
 
@@ -41,6 +79,39 @@ const state = {
 };
 
 const refreshIcons = () => window.lucide && window.lucide.createIcons();
+const focusHeading = (element) => {
+  if (!element) return;
+  window.requestAnimationFrame(() => element.focus({ preventScroll: true }));
+};
+
+const isEmbeddedCheckout = () => document.body.classList.contains("embed");
+const embedTargetOrigin = window.location.origin;
+let embedViewFrame = 0;
+let pendingEmbedView = null;
+let lastEmbedHeight = 0;
+
+const postEmbedHeight = () => {
+  if (!isEmbeddedCheckout()) return;
+  const height = Math.ceil(document.body.getBoundingClientRect().height);
+  if (Math.abs(height - lastEmbedHeight) < 2) return;
+  lastEmbedHeight = height;
+  parent.postMessage({ cz: "height", value: height }, embedTargetOrigin);
+};
+
+const notifyEmbedView = (step, topic) => {
+  document.body.dataset.step = String(step);
+  document.body.dataset.topic = topic;
+  if (!isEmbeddedCheckout()) return;
+
+  pendingEmbedView = { step, topic };
+  if (embedViewFrame) return;
+  embedViewFrame = window.requestAnimationFrame(() => {
+    embedViewFrame = 0;
+    parent.postMessage({ cz: "view", ...pendingEmbedView }, embedTargetOrigin);
+    pendingEmbedView = null;
+    window.requestAnimationFrame(postEmbedHeight);
+  });
+};
 
 /* ---------- navegação entre etapas ---------- */
 const goToStep = (step) => {
@@ -52,30 +123,39 @@ const goToStep = (step) => {
     chip.classList.toggle("is-done", n < step);
     chip.setAttribute("aria-current", n === step ? "step" : "false");
   });
+  const liveStatus = $("[data-checkout-status]");
+  if (liveStatus) {
+    const labels = ["Disponibilidade", "Escolha da acomodação", "Pagamento", "Confirmação"];
+    liveStatus.textContent = `Etapa ${step} de 4: ${labels[step - 1]}.`;
+  }
   requestAnimationFrame(() => {
     const active = $(`[data-view="${step}"]`);
     active?.scrollTo?.({ top: 0 });
     active?.querySelector("form, .room-list")?.scrollTo?.({ top: 0 });
   });
-  if (document.body.classList.contains("embed")) {
-    parent.postMessage({ cz: "step", value: step }, "*");
+  if (isEmbeddedCheckout()) {
+    const topics = {
+      1: "availability:dates",
+      2: "rooms",
+      3: "payment:method",
+      4: "confirmation"
+    };
+    notifyEmbedView(step, topics[step] || `step:${step}`);
   } else {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+  focusHeading($(`[data-view="${step}"] h2`));
 };
 
 /* Modo embed: checkout dentro de um iframe no próprio site. */
 const initEmbed = () => {
   if (!new URLSearchParams(location.search).has("embed")) return;
   document.body.classList.add("embed");
-  const post = () => {
-    const h = Math.ceil(document.body.scrollHeight);
-    parent.postMessage({ cz: "height", value: h }, "*");
-  };
-  if ("ResizeObserver" in window) new ResizeObserver(post).observe(document.body);
-  window.addEventListener("load", post);
-  window.addEventListener("resize", post);
-  setTimeout(post, 300);
+  if ("ResizeObserver" in window) new ResizeObserver(postEmbedHeight).observe(document.body);
+  window.addEventListener("load", postEmbedHeight);
+  window.addEventListener("resize", postEmbedHeight);
+  notifyEmbedView(Number(document.body.dataset.step) || 1, document.body.dataset.topic || "availability:dates");
+  setTimeout(postEmbedHeight, 300);
 };
 
 const showNotice = (message, type = "error") => {
@@ -85,20 +165,32 @@ const showNotice = (message, type = "error") => {
 };
 const clearNotice = () => $("#notice").classList.add("is-hidden");
 
+const invalidateField = (field, message) => {
+  showNotice(message);
+  field?.setAttribute("aria-invalid", "true");
+  field?.focus({ preventScroll: true });
+  field?.scrollIntoView({ behavior: "smooth", block: "center" });
+  return false;
+};
+
 /* ---------- janela de "sem disponibilidade" ---------- */
+let noAvailabilityTrigger = null;
 const showNoAvailability = () => {
   const m = $("[data-noavail]");
   if (!m) return;
+  noAvailabilityTrigger = document.activeElement;
   m.hidden = false;
   document.body.classList.add("modal-open");
   refreshIcons();
-  m.querySelector("[data-noavail-close]")?.focus();
+  m.querySelector(".cz-modal-card [data-noavail-close]")?.focus();
 };
 const closeNoAvailability = () => {
   const m = $("[data-noavail]");
-  if (!m) return;
+  if (!m || m.hidden) return;
   m.hidden = true;
   document.body.classList.remove("modal-open");
+  if (noAvailabilityTrigger instanceof HTMLElement) noAvailabilityTrigger.focus();
+  noAvailabilityTrigger = null;
 };
 
 /* ---------- revisão da reserva (antes do pagamento, mobile) ---------- */
@@ -154,13 +246,37 @@ const updateSummary = () => {
     $("#sum-room").textContent = "Sua reserva";
     $("#sum-total").textContent = "—";
     const img = $("#sum-image");
-    if (img) img.alt = "Vila Zanotto Piri";
+    if (img) img.alt = "Villa Zanotto Piri";
     setSummaryMedia(LOGO_IMAGE, true);
+  }
+};
+
+/* Identificador de sessão da Asksuite (_askSI) — presente no link direto que
+   a IA deles gera. Guardado em sessionStorage pra sobreviver às etapas do
+   checkout e ser enviado no /checkout e /pix/create, permitindo à Asksuite
+   vincular a compra ao atendimento (mesma chave usada na Casa Zanotto,
+   confirmada pelo Felippe em 19/08/2026 como válida pra todos os clientes). */
+const VZ_ASK_SI_KEY = "vz_ask_si";
+const captureAskSi = () => {
+  try {
+    const p = new URLSearchParams(location.search);
+    const askSi = p.get("_askSI") || p.get("_askSi") || p.get("askSI");
+    if (askSi) sessionStorage.setItem(VZ_ASK_SI_KEY, askSi);
+  } catch (_) {
+    /* sessionStorage indisponível (modo privado etc.) — segue sem rastreio */
+  }
+};
+const getAskSi = () => {
+  try {
+    return sessionStorage.getItem(VZ_ASK_SI_KEY) || "";
+  } catch (_) {
+    return "";
   }
 };
 
 /* ---------- prefill via query string (vindo do site) ---------- */
 const prefillFromQuery = () => {
+  captureAskSi();
   const p = new URLSearchParams(location.search);
   const arrival = p.get("arrival_date") || p.get("entrada");
   const departure = p.get("departure_date") || p.get("saida");
@@ -200,8 +316,9 @@ const buildAgesInputs = () => {
   for (let i = 0; i < kids; i += 1) {
     const field = document.createElement("div");
     field.className = "field";
-    field.innerHTML = `<label>Idade da criança ${i + 1}</label>
-      <input type="number" min="0" max="12" value="6" data-age inputmode="numeric" required>`;
+    const inputId = `child-age-${i + 1}`;
+    field.innerHTML = `<label for="${inputId}">Idade da criança ${i + 1}</label>
+      <input id="${inputId}" name="ages[]" type="number" min="0" max="12" value="6" data-age inputmode="numeric" required>`;
     container.appendChild(field);
   }
 };
@@ -210,8 +327,12 @@ const buildAgesInputs = () => {
 const goToSearchStep = (name) => {
   $$("[data-searchstep]").forEach((p) => p.classList.toggle("is-hidden", p.dataset.searchstep !== name));
   const t = $("[data-searchtitle]");
+  const intro = $("[data-searchintro]");
   if (t) t.textContent = name === "guests" ? "Quantos hóspedes?" : "Quando você vem?";
+  if (intro) intro.textContent = name === "guests" ? "Informe adultos e crianças." : "Escolha as datas da estadia.";
   refreshIcons();
+  focusHeading(t);
+  notifyEmbedView(1, `availability:${name}`);
 };
 
 const buildAvailabilityParams = (search) => {
@@ -228,7 +349,7 @@ const buildAvailabilityParams = (search) => {
 /** Consulta a disponibilidade e renderiza a lista; devolve a qtd de quartos. */
 const runAvailability = async (search) => {
   const res = await fetch(`${API_BASE}/availability?${buildAvailabilityParams(search).toString()}`);
-  const data = await res.json();
+  const data = await readJSON(res);
   if (!res.ok) throw new Error(data.error || "Falha ao consultar disponibilidade.");
   state.search = search;
   const list = flattenRooms(data.rooms);
@@ -260,6 +381,7 @@ const fetchAvailability = async (event) => {
     state.selection = null;
     updateSummary();
     if (!count) {
+      persistState();
       showNoAvailability();
       return;
     }
@@ -318,22 +440,49 @@ const extractArtaxImages = (option) => {
 const fallbackRoomImage = (name, index) =>
   FALLBACK_ROOM_IMAGES[index % FALLBACK_ROOM_IMAGES.length];
 
-/* O Vila ainda não tem galeria local própria; as fotos vêm do Artax (quando
-   houver) e, na falta delas, cai no brasão (FALLBACK_ROOM_IMAGES). Quando
-   organizarmos as fotos em assets/rooms/{slug}, é só popular ROOM_PHOTOS. */
-const ROOM_PHOTOS = {};
+const ROOM_PHOTOS = {
+  bangalo: [
+    "assets/gallery/2-2-scaled.webp",
+    "assets/gallery/5-2-scaled.webp",
+    "assets/gallery/11-2-scaled.webp",
+    "assets/gallery/10-2-scaled.webp",
+    "assets/gallery/13-1-scaled.webp",
+    "assets/gallery/3-1-scaled.webp"
+  ],
+  flat: [
+    "assets/gallery/Flat-4-scaled.webp",
+    "assets/gallery/Flat-43-scaled.webp",
+    "assets/gallery/Flat-21-scaled.webp",
+    "assets/gallery/Flat-44-scaled.webp",
+    "assets/gallery/Flat-23-scaled.webp",
+    "assets/gallery/Flat-36-scaled.webp",
+    "assets/gallery/Flat-45-scaled.webp",
+    "assets/gallery/Flat-312-scaled.webp",
+    "assets/gallery/Flat-313-scaled.webp",
+    "assets/gallery/1-2-1-scaled.webp"
+  ],
+  economica: [
+    "assets/gallery/Flat-21-scaled.webp",
+    "assets/gallery/Flat-45-scaled.webp",
+    "assets/gallery/Flat-44-scaled.webp",
+    "assets/gallery/Flat-36-scaled.webp",
+    "assets/gallery/Flat-312-scaled.webp",
+    "assets/gallery/Flat-313-scaled.webp",
+    "assets/gallery/Flat-23-scaled.webp",
+    "assets/gallery/Flat-4-scaled.webp",
+    "assets/gallery/1-2-1-scaled.webp"
+  ]
+};
 const roomSlugFromName = (name) => {
   const n = String(name || "").toLowerCase();
-  if (n.includes("master")) return "gold-master";
-  if (n.includes("gold")) return "gold";
   if (n.includes("bangal")) return "bangalo";
-  if (n.includes("standard")) return "standard";
+  if (n.includes("econômica") || n.includes("economica")) return "economica";
+  if (n.includes("flat")) return "flat";
   return null;
 };
 const localRoomPhotos = (slug) => {
-  const count = ROOM_PHOTOS[slug];
-  if (!count) return [];
-  return Array.from({ length: count }, (_, i) => `assets/rooms/${slug}/${String(i + 1).padStart(2, "0")}.webp`);
+  const photos = ROOM_PHOTOS[slug];
+  return Array.isArray(photos) ? photos : [];
 };
 
 const flattenRooms = (rooms) => {
@@ -350,9 +499,11 @@ const flattenRooms = (rooms) => {
     const fullName = opt.room_name || `Quarto ${roomId}`;
     const artaxImages = extractArtaxImages(opt);
     const localPhotos = localRoomPhotos(roomSlugFromName(fullName));
-    const images = localPhotos.length
-      ? localPhotos
-      : (artaxImages.length ? artaxImages : [fallbackRoomImage(fullName, list.length)]);
+    const images = [...new Set([
+      ...artaxImages,
+      ...localPhotos,
+      ...(!artaxImages.length && !localPhotos.length ? [fallbackRoomImage(fullName, list.length)] : [])
+    ])].slice(0, 12);
     list.push({
       roomId,
       rateplanId: Number(opt.rateplan_id || rid),
@@ -373,12 +524,17 @@ const flattenRooms = (rooms) => {
 const renderRooms = (rooms) => {
   const list = flattenRooms(rooms);
   const container = $("#room-list");
+  const resultStatus = $("[data-room-results-status]");
   const nights = state.search ? nightsBetween(state.search.arrival_date, state.search.departure_date) : 1;
   if (!list.length) {
+    if (resultStatus) resultStatus.textContent = "Nenhuma acomodação encontrada para este período.";
     container.innerHTML =
       '<p class="notice info empty-state">Não há acomodações disponíveis para estas datas. Tente outras datas.</p>';
     refreshIcons();
     return;
+  }
+  if (resultStatus) {
+    resultStatus.textContent = `${list.length} ${list.length === 1 ? "acomodação encontrada" : "acomodações encontradas"} · ${nights} ${nights === 1 ? "noite" : "noites"}`;
   }
   container.innerHTML = list
     .map((opt, i) => {
@@ -392,35 +548,42 @@ const renderRooms = (rooms) => {
         : "";
       const galleryStack = images.length
         ? images
-            .map((src, gi) => `<img src="${escapeHTML(src)}" alt="${escapeHTML(opt.room_name)} — foto ${gi + 1}" class="${gi === 0 ? "is-active" : ""}" loading="${gi === 0 ? "eager" : "lazy"}" draggable="false">`)
+            .map((src, gi) => `<img src="${escapeHTML(src)}" alt="${escapeHTML(opt.room_name)} — foto ${gi + 1}" class="${gi === 0 ? "is-active" : ""}" loading="${gi === 0 ? "eager" : "lazy"}" decoding="async" draggable="false" aria-hidden="${gi === 0 ? "false" : "true"}">`)
             .join("")
         : `<span class="room-thumb--ph"><i data-lucide="bed-double"></i></span>`;
       const galleryControls = images.length > 1
         ? `<button class="rgal-arrow rgal-prev" type="button" data-rgal-prev aria-label="Foto anterior"><i data-lucide="chevron-left" aria-hidden="true"></i></button>
            <button class="rgal-arrow rgal-next" type="button" data-rgal-next aria-label="Próxima foto"><i data-lucide="chevron-right" aria-hidden="true"></i></button>
-           <span class="rgal-count"><span data-rgal-cur>1</span>/${images.length}</span>`
+           <span class="rgal-count" aria-live="polite"><i data-lucide="images" aria-hidden="true"></i><span data-rgal-cur>1</span>/${images.length}</span>
+           <button class="rgal-open" type="button" data-gallery-open aria-label="Ver todas as ${images.length} fotos de ${escapeHTML(opt.room_name)}"><i data-lucide="maximize-2" aria-hidden="true"></i><span>Ver fotos</span></button>
+           <div class="rgal-thumbs" aria-label="Escolher foto">
+             ${images.slice(0, 5).map((src, gi) => `<button type="button" data-rgal-thumb="${gi}" class="${gi === 0 ? "is-active" : ""}" aria-label="Ver foto ${gi + 1}" aria-current="${gi === 0 ? "true" : "false"}"><img src="${escapeHTML(src)}" alt="" loading="lazy" decoding="async"></button>`).join("")}
+           </div>`
         : "";
       return `
-      <article class="room-option" data-room="${encodeRoomData(opt)}" data-i="${i}">
-        <div class="room-gallery" data-rgal>
+      <article class="room-option" data-room="${encodeRoomData(opt)}" data-i="${i}" aria-labelledby="room-title-${i}">
+        <div class="room-gallery" data-rgal aria-label="Galeria de ${escapeHTML(opt.room_name)}">
           <div class="rgal-stack">${galleryStack}</div>
           ${galleryControls}
         </div>
         <div class="room-body">
-          <h3>${escapeHTML(opt.room_name)}${variant}</h3>
+          <span class="room-availability"><i data-lucide="circle-check" aria-hidden="true"></i> Disponível para suas datas</span>
+          <h3 id="room-title-${i}">${escapeHTML(opt.room_name)}${variant}</h3>
           <div class="room-meta">
             ${capacity}
-            <span><i data-lucide="calendar-check" aria-hidden="true"></i> Disponível</span>
+            <span><i data-lucide="image" aria-hidden="true"></i>${images.length} ${images.length === 1 ? "foto" : "fotos"}</span>
           </div>
         </div>
         <div class="room-side">
           <div class="price">
+            <span class="price-label">Valor da estadia</span>
             ${opt.pricePerNight ? `<span class="price-night">${brl(opt.pricePerNight)} <small>/ noite</small></span>` : ""}
             <strong>${brl(opt.price)}</strong>
             <small>total · ${nights} noite(s)</small>
           </div>
-          <button class="btn btn-primary room-select" type="button">
+          <button class="btn btn-primary room-select" type="button" aria-label="Selecionar ${escapeHTML(opt.room_name)} por ${escapeHTML(brl(opt.price))}">
             Selecionar
+            <i data-lucide="arrow-right" aria-hidden="true"></i>
           </button>
         </div>
       </article>`;
@@ -436,17 +599,111 @@ const renderRooms = (rooms) => {
 const setupRoomGalleries = () => {
   $$("[data-rgal]").forEach((gal) => {
     const imgs = $$(".rgal-stack img", gal);
-    if (imgs.length <= 1) return;
     const cur = $("[data-rgal-cur]", gal);
+    const thumbs = $$("[data-rgal-thumb]", gal);
     let i = 0;
     const show = (n) => {
       i = (n + imgs.length) % imgs.length;
-      imgs.forEach((im, k) => im.classList.toggle("is-active", k === i));
+      imgs.forEach((im, k) => {
+        im.classList.toggle("is-active", k === i);
+        im.setAttribute("aria-hidden", String(k !== i));
+      });
+      thumbs.forEach((thumb, k) => {
+        thumb.classList.toggle("is-active", k === i);
+        thumb.setAttribute("aria-current", String(k === i));
+      });
       if (cur) cur.textContent = String(i + 1);
     };
+    if (imgs.length <= 1) return;
     $("[data-rgal-prev]", gal)?.addEventListener("click", (e) => { e.stopPropagation(); show(i - 1); });
     $("[data-rgal-next]", gal)?.addEventListener("click", (e) => { e.stopPropagation(); show(i + 1); });
+    thumbs.forEach((thumb) => thumb.addEventListener("click", (e) => {
+      e.stopPropagation();
+      show(Number(thumb.dataset.rgalThumb));
+    }));
+    const openGallery = (trigger) => {
+      const card = gal.closest("[data-room]");
+      if (!card) return;
+      const room = decodeRoomData(card.dataset.room);
+      openRoomGallery(room.images || [room.image].filter(Boolean), room.room_name, i, trigger);
+    };
+    $("[data-gallery-open]", gal)?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openGallery(e.currentTarget);
+    });
+    $(".rgal-stack", gal)?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openGallery($("[data-gallery-open]", gal) || gal);
+    });
   });
+};
+
+/* Galeria ampliada: mantém o usuário no fluxo e oferece navegação por teclado. */
+const roomGalleryState = { images: [], index: 0, name: "", trigger: null };
+
+const renderRoomGallery = () => {
+  const modal = $("[data-gallery-modal]");
+  const image = $("[data-gallery-image]", modal);
+  const counter = $("[data-gallery-counter]", modal);
+  const title = $("[data-gallery-title]", modal);
+  const thumbs = $("[data-gallery-thumbs]", modal);
+  const total = roomGalleryState.images.length;
+  if (!modal || !image || !total) return;
+
+  roomGalleryState.index = (roomGalleryState.index + total) % total;
+  const current = roomGalleryState.images[roomGalleryState.index];
+  image.src = current;
+  image.alt = `${roomGalleryState.name} — foto ${roomGalleryState.index + 1} de ${total}`;
+  if (title) title.textContent = roomGalleryState.name;
+  if (counter) counter.textContent = `${roomGalleryState.index + 1} de ${total}`;
+  $$('[data-gallery-thumb]', thumbs).forEach((button, index) => {
+    const active = index === roomGalleryState.index;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-current", String(active));
+    if (active) button.scrollIntoView({ block: "nearest", inline: "center" });
+  });
+  $$('[data-gallery-prev], [data-gallery-next]', modal).forEach((button) => {
+    button.disabled = total <= 1;
+  });
+};
+
+const moveRoomGallery = (direction) => {
+  roomGalleryState.index += direction;
+  renderRoomGallery();
+};
+
+const openRoomGallery = (images, name, initialIndex = 0, trigger = null) => {
+  const modal = $("[data-gallery-modal]");
+  const list = [...new Set((images || []).map(normalizeImageUrl).filter(isImageUrl))];
+  if (!modal || !list.length) return;
+  roomGalleryState.images = list;
+  roomGalleryState.index = Math.max(0, Math.min(list.length - 1, Number(initialIndex) || 0));
+  roomGalleryState.name = name || "Acomodação";
+  roomGalleryState.trigger = trigger instanceof HTMLElement ? trigger : document.activeElement;
+  const thumbs = $("[data-gallery-thumbs]", modal);
+  if (thumbs) {
+    thumbs.innerHTML = list.map((src, index) => `
+      <button type="button" data-gallery-thumb="${index}" aria-label="Ver foto ${index + 1}" aria-current="${index === roomGalleryState.index ? "true" : "false"}" class="${index === roomGalleryState.index ? "is-active" : ""}">
+        <img src="${escapeHTML(src)}" alt="" loading="lazy" decoding="async">
+      </button>`).join("");
+  }
+  modal.hidden = false;
+  document.body.classList.add("modal-open", "gallery-open");
+  renderRoomGallery();
+  refreshIcons();
+  $(".gallery-close", modal)?.focus();
+};
+
+const closeRoomGallery = () => {
+  const modal = $("[data-gallery-modal]");
+  if (!modal || modal.hidden) return;
+  modal.hidden = true;
+  document.body.classList.remove("gallery-open");
+  if ($("[data-noavail]")?.hidden !== false) document.body.classList.remove("modal-open");
+  const trigger = roomGalleryState.trigger;
+  roomGalleryState.images = [];
+  roomGalleryState.trigger = null;
+  if (trigger instanceof HTMLElement) trigger.focus();
 };
 
 /* Carrossel horizontal dos quartos (tablet/mobile) — não rola a página. */
@@ -468,7 +725,10 @@ const setupRoomCarousel = () => {
 
   const setActive = (i) => {
     idx = Math.max(0, Math.min(cards.length - 1, i));
-    dots.forEach((d, di) => d.classList.toggle("is-active", di === idx));
+    dots.forEach((d, di) => {
+      d.classList.toggle("is-active", di === idx);
+      d.setAttribute("aria-current", di === idx ? "true" : "false");
+    });
     prev.disabled = idx <= 0;
     next.disabled = idx >= cards.length - 1;
   };
@@ -534,7 +794,7 @@ const maskExpiry = (el) => {
 };
 const onlyDigits = (el) => { el.value = el.value.replace(/\D/g, ""); };
 
-// Telefone: (62) 99999-9999  (aceita fixo de 10 e celular de 11 dígitos)
+// Telefone com DDD: aceita fixo de 10 e celular de 11 dígitos.
 const maskPhone = (el) => {
   let v = el.value.replace(/\D/g, "").slice(0, 11);
   if (v.length > 10) v = v.replace(/^(\d{2})(\d{5})(\d{0,4}).*/, "($1) $2-$3");
@@ -565,14 +825,31 @@ const maskDocument = (el) => {
   el.value = el.value.replace(/\D/g, "").slice(0, 14);
 };
 
+const syncDocumentInputMode = () => {
+  const input = $("#g-doc");
+  if (!input) return;
+  const passport = $("#g-doctype")?.value === "passport";
+  input.inputMode = passport ? "text" : "numeric";
+  input.autocapitalize = passport ? "characters" : "off";
+  input.placeholder = passport ? "Ex.: AB123456" : "";
+  maskDocument(input);
+};
+
 /* ---------- etapa 3: pagamento (sub-etapas: forma -> dados -> pagar) ---------- */
 let payMethod = "pix";
 let pixPoll = null;
 let pixTick = null;       // contador regressivo (1s)
 let currentPix = null;    // { tid, expiresAt, qrCode, qrImage } da cobrança ativa
 
+const guardActivePix = () => {
+  if (!currentPix) return false;
+  showNotice("Há um PIX ativo aguardando pagamento. Conclua o pagamento ou aguarde a expiração para alterar a reserva.", "info");
+  return true;
+};
+
 const PAYSTEPS = ["method", "guest", "pay"];
 let payStep = "method";
+let guestStep = "name";
 
 const payStepTitle = (name) =>
   name === "guest" ? "Dados do hóspede"
@@ -580,6 +857,7 @@ const payStepTitle = (name) =>
       : "Forma de pagamento";
 
 const goToPayStep = (name) => {
+  if (name !== "pay" && guardActivePix()) return;
   payStep = name;
   $$("[data-paystep]").forEach((p) => p.classList.toggle("is-hidden", p.dataset.paystep !== name));
   const cur = PAYSTEPS.indexOf(name);
@@ -587,15 +865,34 @@ const goToPayStep = (name) => {
     const i = PAYSTEPS.indexOf(d.dataset.paystepDot);
     d.classList.toggle("is-active", i === cur);
     d.classList.toggle("is-done", i < cur);
+    d.setAttribute("aria-current", i === cur ? "step" : "false");
   });
   const title = $("[data-paystep-title]");
+  const intro = $("[data-paystep-intro]");
   if (title) title.textContent = payStepTitle(name);
+  if (intro) {
+    intro.textContent = name === "guest"
+      ? "Preencha seus dados."
+      : name === "pay"
+        ? (payMethod === "pix" ? "Finalize com PIX." : "Informe os dados do cartão.")
+        : "Escolha PIX ou cartão.";
+  }
   if (name === "guest") goToGuestStep("name"); // dados em 3 mini-etapas
   if (name === "pay") setPayMethod(payMethod); // garante painel/campos corretos ao chegar
+  else ["#c-number", "#c-name", "#c-exp", "#c-cvv", "#c-inst"].forEach((sel) => {
+    const field = $(sel);
+    if (field) field.disabled = true;
+  });
   refreshIcons();
+  focusHeading(title);
   persistState();
-  if (document.body.classList.contains("embed")) {
-    parent.postMessage({ cz: "step", value: 3 }, "*");
+  if (isEmbeddedCheckout()) {
+    const topic = name === "guest"
+      ? `payment:guest:${guestStep}`
+      : name === "pay"
+        ? `payment:pay:${payMethod}`
+        : "payment:method";
+    notifyEmbedView(3, topic);
   } else {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -603,13 +900,19 @@ const goToPayStep = (name) => {
 
 /* Dados do hóspede em 3 mini-etapas: nome -> contato -> documento */
 const goToGuestStep = (name) => {
+  guestStep = name;
   $$("[data-gueststep]").forEach((g) => g.classList.toggle("is-hidden", g.dataset.gueststep !== name));
   const t = $("[data-paystep-title]");
+  const intro = $("[data-paystep-intro]");
   if (t) t.textContent = name === "contact" ? "Telefone e e-mail" : name === "doc" ? "Documento" : "Seu nome";
+  if (intro) intro.textContent = name === "contact" ? "Como podemos falar com você?" : name === "doc" ? "Preenchimento opcional." : "Informe o hóspede principal.";
   refreshIcons();
+  focusHeading(t);
+  notifyEmbedView(3, `payment:guest:${name}`);
 };
 
 const setPayMethod = (method) => {
+  if (method !== "pix" && guardActivePix()) return;
   payMethod = method;
   $$(".pay-opt").forEach((t) => {
     const active = t.dataset.payMethod === method;
@@ -617,16 +920,21 @@ const setPayMethod = (method) => {
     t.setAttribute("aria-pressed", String(active));
   });
   $$("[data-pane]").forEach((p) => p.classList.toggle("is-hidden", p.dataset.pane !== method));
-  // Desabilita os campos do cartão quando não for cartão (evita validação em campo oculto).
+  // Só valida cartão quando o respectivo painel de pagamento está visível.
   ["#c-number", "#c-name", "#c-exp", "#c-cvv", "#c-inst"].forEach((sel) => {
     const el = $(sel);
-    if (el) el.disabled = method !== "card";
+    if (el) el.disabled = method !== "card" || payStep !== "pay";
   });
   const label = $("#pay-btn .label");
   if (label) label.textContent = method === "pix" ? "Gerar PIX" : "Pagar e reservar";
   const title = $("[data-paystep-title]");
   if (title && payStep === "pay") title.textContent = payStepTitle("pay");
+  const intro = $("[data-paystep-intro]");
+  if (intro && payStep === "pay") intro.textContent = method === "pix" ? "Finalize com PIX." : "Informe os dados do cartão.";
   persistState();
+  if (Number(document.body.dataset.step) === 3) {
+    notifyEmbedView(3, payStep === "pay" ? `payment:pay:${method}` : `payment:${payStep}`);
+  }
 };
 
 /* ---------- bandeira do cartão + prévia ao vivo ---------- */
@@ -666,6 +974,7 @@ const baseReservationPayload = () => ({
   ages: state.search.ages,
   room_id: state.selection.roomId,
   rateplan_id: state.selection.rateplanId,
+  ask_si: getAskSi() || undefined,
   guest: {
     first_name: $("#g-first").value.trim(),
     last_name: $("#g-last").value.trim(),
@@ -678,9 +987,57 @@ const baseReservationPayload = () => ({
 });
 
 const guestValid = () => {
-  if (!$("#g-first").value.trim()) { showNotice("Informe o nome do hóspede."); return false; }
-  if ($("#g-phone").value.replace(/\D/g, "").length < 10) { showNotice("Informe um telefone válido com DDD."); return false; }
+  if (!$("#g-first").value.trim()) return invalidateField($("#g-first"), "Informe o nome do hóspede.");
+  if ($("#g-phone").value.replace(/\D/g, "").length < 10) return invalidateField($("#g-phone"), "Informe um telefone válido com DDD.");
   return true;
+};
+
+const passesLuhn = (digits) => {
+  let sum = 0;
+  let doubleDigit = false;
+  for (let index = digits.length - 1; index >= 0; index -= 1) {
+    let digit = Number(digits[index]);
+    if (doubleDigit) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    doubleDigit = !doubleDigit;
+  }
+  return sum > 0 && sum % 10 === 0;
+};
+
+const validatedCard = () => {
+  const fail = (field, message) => {
+    invalidateField(field, message);
+    return null;
+  };
+  const numberField = $("#c-number");
+  const holderField = $("#c-name");
+  const expiryField = $("#c-exp");
+  const cvvField = $("#c-cvv");
+  const number = numberField.value.replace(/\D/g, "");
+  const holderName = holderField.value.trim();
+  const expiryMatch = expiryField.value.match(/^(\d{2})\/(\d{2})$/);
+  const securityCode = cvvField.value.replace(/\D/g, "");
+
+  if (number.length < 13 || number.length > 19 || !passesLuhn(number)) {
+    return fail(numberField, "Confira o número do cartão.");
+  }
+  if (holderName.length < 2) return fail(holderField, "Informe o nome impresso no cartão.");
+  if (!expiryMatch) return fail(expiryField, "Informe a validade no formato MM/AA.");
+
+  const expirationMonth = Number(expiryMatch[1]);
+  const expirationYear = 2000 + Number(expiryMatch[2]);
+  const expiresAt = new Date(expirationYear, expirationMonth, 0, 23, 59, 59);
+  if (expirationMonth < 1 || expirationMonth > 12 || expiresAt < new Date()) {
+    return fail(expiryField, "O cartão está vencido ou a validade é inválida.");
+  }
+  if (securityCode.length < 3 || securityCode.length > 4) {
+    return fail(cvvField, "Confira o código de segurança (CVV).");
+  }
+
+  return { number, holderName, expirationMonth, expirationYear, securityCode };
 };
 
 const submitCheckout = (event) => {
@@ -696,17 +1053,12 @@ const submitCheckout = (event) => {
 };
 
 const submitCard = async () => {
-  const [mm, yy] = $("#c-exp").value.split("/");
+  const card = validatedCard();
+  if (!card) return;
   const payload = {
     ...baseReservationPayload(),
     installments: Number($("#c-inst").value) || 1,
-    card: {
-      number: $("#c-number").value.replace(/\s/g, ""),
-      holderName: $("#c-name").value.trim(),
-      expirationMonth: Number(mm),
-      expirationYear: Number(yy),
-      securityCode: $("#c-cvv").value
-    }
+    card
   };
   const btn = $("#pay-btn");
   btn.disabled = true;
@@ -717,8 +1069,11 @@ const submitCard = async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
+    const data = await readJSON(res);
     if (!res.ok) throw new Error(data.error || "Não foi possível concluir o pagamento.");
+    if (data.payment?.captured === false) {
+      throw new Error("A reserva foi criada, mas o pagamento ainda precisa de confirmação. Não tente novamente; fale com a recepção e informe o número da reserva.");
+    }
     renderSuccess(data);
   } catch (err) {
     showNotice(err.message);
@@ -737,7 +1092,7 @@ const submitPix = async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(baseReservationPayload())
     });
-    const data = await res.json();
+    const data = await readJSON(res);
     if (!res.ok) throw new Error(data.error || "Não foi possível gerar o PIX.");
     showPix(data);
   } catch (err) {
@@ -768,6 +1123,7 @@ const renderPixView = (pix) => {
     btn.disabled = true;
     btn.querySelector(".label").innerHTML = '<span class="spinner"></span> Aguardando pagamento…';
   }
+  notifyEmbedView(3, "payment:pay:pix-result");
 };
 
 const showPix = (data) => {
@@ -823,7 +1179,7 @@ const startPixPolling = (tid, expiresAt) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tid })
       });
-      const data = await res.json();
+      const data = await readJSON(res);
       if (data.status === "paid") { stopPixPolling(); renderSuccess(data); }
       else if (data.status === "expired" || data.status === "canceled") { stopPixPolling(); pixExpired(); }
     } catch (_) { /* mantém tentando */ }
@@ -847,6 +1203,7 @@ const pixExpired = () => {
   showNotice("O PIX expirou. Gere um novo código para continuar.", "info");
   persistState();
   refreshIcons();
+  notifyEmbedView(3, "payment:pay:pix");
 };
 
 const renderSuccess = (data) => {
@@ -861,13 +1218,18 @@ const renderSuccess = (data) => {
   if (emailEl) {
     emailEl.innerHTML = email
       ? `<i data-lucide="mail-check" aria-hidden="true"></i> Enviamos a confirmação para <strong>${escapeHTML(email)}</strong>.`
-      : `<i data-lucide="mail-check" aria-hidden="true"></i> Confirmação enviada por e-mail.`;
+      : `<i data-lucide="bookmark-check" aria-hidden="true"></i> Guarde o número da reserva para consultar com a recepção.`;
   }
 
   const p = data.payment || {};
   const methodLabel = p.method === "pix" ? "PIX" : `Cartão${p.installments ? ` · ${p.installments}x` : ""}`;
+  const bookedRoomNames = (Array.isArray(data.rooms) ? data.rooms : [data.room])
+    .filter(Boolean)
+    .map((room) => room.name)
+    .filter(Boolean)
+    .join(", ") || "—";
   $("#success-details").innerHTML = `
-    <div class="summary-row"><span>Quarto</span><span>${data.room?.name || "—"}</span></div>
+    <div class="summary-row"><span>Acomodação</span><span>${escapeHTML(bookedRoomNames)}</span></div>
     <div class="summary-row"><span>Check-in</span><span>${fmtDate(state.search.arrival_date)}</span></div>
     <div class="summary-row"><span>Check-out</span><span>${fmtDate(state.search.departure_date)}</span></div>
     <div class="summary-row"><span>Pagamento</span><span>${methodLabel}</span></div>
@@ -877,7 +1239,7 @@ const renderSuccess = (data) => {
 };
 
 /* ---------- persistência (localStorage): retoma de onde parou ---------- */
-const STORAGE_KEY = "cz_checkout_v1";
+const STORAGE_KEY = "vz_checkout_v1";
 const STORAGE_TTL = 2 * 60 * 60 * 1000; // 2h
 
 function persistState() {
@@ -912,51 +1274,110 @@ const clearState = () => {
   try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
 };
 
+const hasExplicitSearchQuery = () => {
+  const params = new URLSearchParams(location.search);
+  const directKeys = new Set(["arrival_date", "departure_date", "entrada", "saida", "adults", "hospedes", "kids", "children"]);
+  return [...params.keys()].some((key) => directKeys.has(key) || /^ages(?:\[\d*\])?$/.test(key));
+};
+
+const restoreSearchInputs = (search) => {
+  if (!search) return;
+  const set = (sel, value) => { const el = $(sel); if (el) el.value = value; };
+  set("#arrival", search.arrival_date || "");
+  set("#departure", search.departure_date || "");
+  set("#adults", String(Math.min(9, Math.max(1, Number(search.adults) || 2))));
+  set("#kids", String(Math.min(6, Math.max(0, Number(search.kids) || 0))));
+  buildAgesInputs();
+  (search.ages || []).forEach((age, index) => {
+    const input = $$("#ages-inputs [data-age]")[index];
+    if (input) input.value = String(age);
+  });
+};
+
+// Preenche os campos antes de iniciar o calendário, sem superar datas novas da URL.
+const primeStoredSearch = () => {
+  const saved = loadState();
+  if (!saved?.search || saved.v !== 1 || hasExplicitSearchQuery()) return;
+  if (Date.now() - saved.ts > STORAGE_TTL) { clearState(); return; }
+  restoreSearchInputs(saved.search);
+};
+
 const restoreGuest = (g) => {
   if (!g) return;
   const set = (sel, v) => { const el = $(sel); if (el) el.value = v || ""; };
   set("#g-first", g.first); set("#g-last", g.last); set("#g-phone", g.phone);
   set("#g-email", g.email); set("#g-doctype", g.doctype); set("#g-doc", g.doc);
+  syncDocumentInputMode();
 };
 
 const restoreState = async () => {
   const saved = loadState();
   if (!saved || saved.v !== 1 || !saved.search) return false;
   if (Date.now() - saved.ts > STORAGE_TTL) { clearState(); return false; }
+  if (hasExplicitSearchQuery()) { clearState(); return false; }
 
   // restaura a busca (inputs) e os hóspedes
   state.search = saved.search;
-  const set = (sel, v) => { const el = $(sel); if (el) el.value = v; };
-  set("#arrival", saved.search.arrival_date || "");
-  set("#departure", saved.search.departure_date || "");
-  set("#adults", String(saved.search.adults ?? 2));
-  set("#kids", String(saved.search.kids ?? 0));
-  buildAgesInputs();
-  (saved.search.ages || []).forEach((age, i) => {
-    const inp = $$("#ages-inputs [data-age]")[i];
-    if (inp) inp.value = String(age);
-  });
+  restoreSearchInputs(saved.search);
   restoreGuest(saved.guest);
   updateSummary();
 
-  // já tinha quarto escolhido -> volta direto pra etapa 3
+  // Uma tarifa salva nunca é reutilizada sem nova consulta de disponibilidade.
   if (saved.selection) {
-    state.selection = saved.selection;
+    try {
+      const count = await runAvailability(saved.search);
+      if (!count) {
+        state.selection = null;
+        updateSummary();
+        persistState();
+        goToStep(1);
+        showNoAvailability();
+        return true;
+      }
+    } catch (_) {
+      state.selection = null;
+      updateSummary();
+      goToStep(1);
+      showNotice("Não foi possível revalidar a tarifa salva. Faça uma nova busca para continuar.", "info");
+      return true;
+    }
+
+    const freshSelection = $$(".room-option")
+      .map((card) => decodeRoomData(card.dataset.room))
+      .find((room) => String(room.roomId) === String(saved.selection.roomId)
+        && String(room.rateplanId) === String(saved.selection.rateplanId));
+    if (!freshSelection) {
+      state.selection = null;
+      updateSummary();
+      persistState();
+      goToStep(2);
+      showNotice("A tarifa escolhida mudou. Selecione novamente uma acomodação para continuar.", "info");
+      return true;
+    }
+
+    state.selection = freshSelection;
     updateSummary();
     updateReview();
-    buildInstallments(saved.selection.price);
-    if (saved.installments) set("#c-inst", String(saved.installments));
+    buildInstallments(freshSelection.price);
+    if (saved.installments && saved.installments <= INSTALLMENTS_MAX) {
+      $("#c-inst").value = String(saved.installments);
+    }
     goToStep(3);
     setPayMethod(saved.payMethod || "pix");
     goToPayStep(saved.payStep || "method");
     if (saved.pix && saved.pix.expiresAt > Date.now()) restorePix(saved.pix);
-    runAvailability(saved.search).catch(() => {}); // popula a lista no fundo (p/ "Voltar")
     return true;
   }
 
   // estava só na lista de quartos
   if (saved.step === 2) {
-    try { if (await runAvailability(saved.search)) goToStep(2); } catch (_) {}
+    try {
+      if (await runAvailability(saved.search)) goToStep(2);
+      else { goToStep(1); showNoAvailability(); }
+    } catch (_) {
+      goToStep(1);
+      showNotice("Não foi possível atualizar a disponibilidade. Tente novamente.", "info");
+    }
     return true;
   }
   return false;
@@ -987,6 +1408,8 @@ const initCalendar = () => {
   const hint = $("[data-cal-hint]", root);
   const inEl = $("[data-cal-in]", root);
   const outEl = $("[data-cal-out]", root);
+  const inField = $("[data-cal-infield]", root);
+  const outField = $("[data-cal-outfield]", root);
   const arrivalInput = $("#arrival");
   const departureInput = $("#departure");
 
@@ -1013,6 +1436,10 @@ const initCalendar = () => {
     departureInput.value = departure ? iso(departure) : "";
     inEl.textContent = arrival ? fmt(arrival) : "Selecionar";
     outEl.textContent = departure ? fmt(departure) : "Selecionar";
+    inField.setAttribute("aria-label", arrival ? `Alterar check-in de ${arrival.toLocaleDateString("pt-BR")}` : "Selecionar data de check-in");
+    outField.setAttribute("aria-label", departure ? `Alterar check-out de ${departure.toLocaleDateString("pt-BR")}` : "Selecionar data de check-out");
+    inField.setAttribute("aria-pressed", String(selecting === "in"));
+    outField.setAttribute("aria-pressed", String(selecting === "out"));
     root.classList.toggle("rc-has-in", Boolean(arrival));
     root.classList.toggle("rc-has-out", Boolean(departure));
     root.classList.toggle("rc-pick-in", selecting === "in");
@@ -1030,7 +1457,7 @@ const initCalendar = () => {
     title.textContent = `${MONTHS[view.getMonth()]} de ${view.getFullYear()}`;
     const startWd = new Date(view.getFullYear(), view.getMonth(), 1).getDay();
     const days = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
-    let html = WD.map((w) => `<span class="rc-wd">${w}</span>`).join("");
+    let html = WD.map((w) => `<span class="rc-wd" aria-hidden="true">${w}</span>`).join("");
     for (let i = 0; i < startWd; i += 1) html += `<span class="rc-empty"></span>`;
     for (let day = 1; day <= days; day += 1) {
       const d = new Date(view.getFullYear(), view.getMonth(), day);
@@ -1041,7 +1468,9 @@ const initCalendar = () => {
       if (same(d, departure)) cls.push("is-end");
       if (arrival && departure && d > arrival && d < departure) cls.push("is-range");
       if (same(d, todayD)) cls.push("is-today");
-      html += `<button type="button" class="${cls.join(" ")}" ${past ? "disabled" : ""} data-day="${iso(d)}">${day}</button>`;
+      const fullDate = d.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+      const selected = same(d, arrival) || same(d, departure);
+      html += `<button type="button" class="${cls.join(" ")}" ${past ? "disabled" : ""} data-day="${iso(d)}" aria-label="${escapeHTML(fullDate)}" aria-selected="${selected}"${same(d, todayD) ? ' aria-current="date"' : ""}>${day}</button>`;
     }
     grid.innerHTML = html;
     refreshIcons();
@@ -1102,9 +1531,11 @@ const initCalendar = () => {
 
 /* ---------- bind ---------- */
 document.addEventListener("DOMContentLoaded", () => {
+  loadPublicConfig();
   initEmbed();
   refreshIcons();
   prefillFromQuery();
+  primeStoredSearch();
   initCalendar();
   initSteppers();
   updateSummary();
@@ -1121,7 +1552,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   $("#back-to-search").addEventListener("click", () => { goToStep(1); goToSearchStep("dates"); });
-  $("#back-to-rooms").addEventListener("click", () => goToStep(2));
+  $("#back-to-rooms").addEventListener("click", () => { if (!guardActivePix()) goToStep(2); });
 
   // Sub-passos da etapa 1: datas -> hóspedes
   $("[data-search-next]")?.addEventListener("click", () => {
@@ -1142,7 +1573,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // Máscaras dos dados do hóspede
   $("#g-phone").addEventListener("input", (e) => maskPhone(e.target));
   $("#g-doc").addEventListener("input", (e) => maskDocument(e.target));
-  $("#g-doctype").addEventListener("change", () => maskDocument($("#g-doc")));
+  $("#g-doctype").addEventListener("change", syncDocumentInputMode);
+  syncDocumentInputMode();
+  $$("input, select").forEach((field) => {
+    const clearInvalid = () => field.removeAttribute("aria-invalid");
+    field.addEventListener("input", clearInvalid);
+    field.addEventListener("change", clearInvalid);
+  });
 
   // Persiste hóspede e parcelas conforme o usuário preenche
   ["#g-first", "#g-last", "#g-phone", "#g-email", "#g-doctype", "#g-doc"].forEach((sel) => {
@@ -1169,8 +1606,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Mini-etapas dos dados: nome -> contato -> documento
   $$("[data-guestnext]").forEach((b) => b.addEventListener("click", () => {
     const target = b.dataset.guestnext;
-    if (target === "contact" && !$("#g-first").value.trim()) { showNotice("Informe o nome do hóspede."); return; }
-    if (target === "doc" && $("#g-phone").value.replace(/\D/g, "").length < 10) { showNotice("Informe um telefone válido com DDD."); return; }
+    if (target === "contact" && !$("#g-first").value.trim()) return invalidateField($("#g-first"), "Informe o nome do hóspede.");
+    if (target === "doc" && $("#g-phone").value.replace(/\D/g, "").length < 10) return invalidateField($("#g-phone"), "Informe um telefone válido com DDD.");
     clearNotice();
     goToGuestStep(target);
   }));
@@ -1188,8 +1625,68 @@ document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => { b.innerHTML = old; refreshIcons(); }, 1800);
   });
 
-  $$("[data-noavail-close]").forEach((b) => b.addEventListener("click", closeNoAvailability));
+  // Galeria ampliada das acomodações: controles, miniaturas, swipe e foco preso.
+  $$("[data-gallery-close]").forEach((button) => button.addEventListener("click", closeRoomGallery));
+  $("[data-gallery-prev]")?.addEventListener("click", () => moveRoomGallery(-1));
+  $("[data-gallery-next]")?.addEventListener("click", () => moveRoomGallery(1));
+  const galleryModal = $("[data-gallery-modal]");
+  galleryModal?.addEventListener("click", (event) => {
+    const thumb = event.target.closest("[data-gallery-thumb]");
+    if (!thumb) return;
+    roomGalleryState.index = Number(thumb.dataset.galleryThumb) || 0;
+    renderRoomGallery();
+  });
+  galleryModal?.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft") { event.preventDefault(); moveRoomGallery(-1); return; }
+    if (event.key === "ArrowRight") { event.preventDefault(); moveRoomGallery(1); return; }
+    if (event.key !== "Tab") return;
+    const focusable = $$("button:not([tabindex='-1']):not([disabled]), [href]", galleryModal);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+  let galleryTouchX = null;
+  $(".gallery-stage", galleryModal)?.addEventListener("touchstart", (event) => {
+    galleryTouchX = event.changedTouches[0]?.clientX ?? null;
+  }, { passive: true });
+  $(".gallery-stage", galleryModal)?.addEventListener("touchend", (event) => {
+    if (galleryTouchX == null) return;
+    const delta = (event.changedTouches[0]?.clientX ?? galleryTouchX) - galleryTouchX;
+    galleryTouchX = null;
+    if (Math.abs(delta) > 48) moveRoomGallery(delta > 0 ? -1 : 1);
+  }, { passive: true });
+
+  $$("[data-noavail-close]:not([data-noavail-reset])").forEach((b) => b.addEventListener("click", closeNoAvailability));
+  $("[data-noavail-reset]")?.addEventListener("click", () => {
+    noAvailabilityTrigger = null;
+    closeNoAvailability();
+    goToStep(1);
+    goToSearchStep("dates");
+  });
+  $("[data-noavail]")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") return;
+    const focusable = $$("button:not([tabindex='-1']):not([disabled])", event.currentTarget);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeNoAvailability();
+    if (e.key !== "Escape") return;
+    if ($("[data-gallery-modal]")?.hidden === false) closeRoomGallery();
+    else closeNoAvailability();
   });
 });

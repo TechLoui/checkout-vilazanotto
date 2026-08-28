@@ -1,14 +1,24 @@
-# Netlify — apenas o site estático (frontend).
-# O backend roda no Railway (pasta /server). O front fala com ele via
+# Netlify — site institucional + checkout estático.
+# O backend roda no Railway (pasta /server). O checkout fala com ele via
 # window.VZ_CHECKOUT_API definido em checkout.html.
 
 [build]
-  publish = "."
-  command = ""
+  publish = "dist"
+  command = "rm -rf dist && mkdir -p dist && cp index.html checkout.html styles.css checkout.css site.js checkout.js robots.txt sitemap.xml dist/ && cp -R assets dist/assets"
 
-# O Vila ainda não tem site institucional — o checkout É a página inicial.
-# Serve checkout.html na raiz "/" (status 200 = rewrite, mantém a URL limpa).
-[[redirects]]
-  from = "/"
-  to = "/checkout.html"
-  status = 200
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400, stale-while-revalidate=604800"
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

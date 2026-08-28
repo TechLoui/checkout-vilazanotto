@@ -18,6 +18,7 @@ pix/
 
 # Netlify
 .netlify/
+dist/
 
 # Dev / lixo
 .playwright-cli/

@@ -5,18 +5,19 @@ import { authorize, capture, refund, createPix, getPixTransaction, pixStatusOf, 
 import { itauTxid, createCob, getCob, cobPaid, cobCanceled } from "./itau.js";
 import { ValidationError } from "./validation.js";
 import { sendBookingConfirmation } from "./email.js";
+import { notifyAsksuiteBooking, notifyAsksuitePurchase } from "./partners.js";
 
 const nightsBetween = (arrival, departure) =>
   Math.max(1, Math.round((new Date(departure) - new Date(arrival)) / 86_400_000));
 
 /** Dispara o e-mail de confirmação (fire-and-forget; nunca derruba a reserva). */
-const fireConfirmationEmail = ({ input, option, totalPrice, bookingId, method, tid }) => {
+const fireConfirmationEmail = ({ input, rooms, totalPrice, bookingId, method, tid }) => {
   const to = input?.guest?.email;
   if (!to) return;
   sendBookingConfirmation({
     to,
     guestName: [input.guest.first_name, input.guest.last_name].filter(Boolean).join(" "),
-    roomName: option.roomName,
+    rooms: rooms.map((room) => ({ name: room.option.roomName, price: room.totalPrice })),
     checkIn: input.arrival_date,
     checkOut: input.departure_date,
     nights: nightsBetween(input.arrival_date, input.departure_date),
@@ -27,6 +28,67 @@ const fireConfirmationEmail = ({ input, option, totalPrice, bookingId, method, t
     method,
     tid
   }).catch((e) => console.error("[email] falha inesperada:", e.message));
+};
+
+/** Notifica parceiros sem bloquear o checkout ou expor dados de cartao. */
+const fireAsksuiteNotification = ({ input, rooms, totalPrice, bookingId, method, tid }) => {
+  const partnerRooms = rooms.map((room) => ({
+    id: room.roomId,
+    name: room.option.roomName,
+    rateplan_id: room.option.rateplanId,
+    price: room.totalPrice
+  }));
+
+  notifyAsksuiteBooking({
+    event: "booking.confirmed",
+    property: { code: "VZ", name: "Villa Zanotto Piri" },
+    booking_id: bookingId,
+    arrival_date: input.arrival_date,
+    departure_date: input.departure_date,
+    nights: nightsBetween(input.arrival_date, input.departure_date),
+    rooms: partnerRooms,
+    // Alias legado do webhook enquanto a integracao singular estiver ativa.
+    ...(partnerRooms.length === 1 ? { room: partnerRooms[0] } : {}),
+    guests: { adults: input.adults, kids: input.kids },
+    guest: {
+      first_name: input.guest?.first_name,
+      last_name: input.guest?.last_name,
+      email: input.guest?.email,
+      phone: input.guest?.phone
+    },
+    payment: { method, amount: totalPrice, currency: "BRL", tid },
+    confirmed_at: new Date().toISOString()
+  }).catch((e) => console.error("[asksuite] falha inesperada:", e.message));
+};
+
+/**
+ * Notifica a Asksuite da compra vinculada à sessão de atendimento (_askSI),
+ * no formato pedido pelo Felippe (17/08/2026, mesma chave pra todos os
+ * clientes confirmada em 19/08/2026). Só dispara se a reserva carregar um
+ * _askSI (ou seja, veio do link direto que a IA deles gera).
+ */
+const fireAsksuitePurchaseTracking = ({ input, rooms, bookingId }) => {
+  const askSi = input.askSi;
+  if (!askSi) return;
+  notifyAsksuitePurchase({
+    event: "purchase",
+    products: rooms.map((room) => ({ currency: "BRL", price: room.totalPrice, quantity: 1 })),
+    session: { _askSI: askSi },
+    dataLayer: {
+      ecommerce: {
+        purchase: {
+          actionField: { id: String(bookingId), currency: "BRL" },
+          products: rooms.map((room) => ({
+            name: room.option.roomName,
+            price: room.totalPrice,
+            category: "",
+            quantity: 1,
+            currency: "BRL"
+          }))
+        }
+      }
+    }
+  }).catch((e) => console.error("[asksuite] falha inesperada (purchase tracking):", e.message));
 };
 
 /** Encontra a opção (quarto + rateplan) e devolve o PREÇO AUTORITATIVO do Artax. */
@@ -48,7 +110,10 @@ const resolveAuthoritativeOption = (availability, roomId, rateplanId) => {
   };
 };
 
-/** Reconfere disponibilidade no momento da compra e calcula o total a cobrar. */
+/**
+ * Reconfere disponibilidade no momento da compra e calcula o total a cobrar.
+ * A consulta e unica e o preco autoritativo de cada acomodacao vem do Artax.
+ */
 const resolveStay = async (input) => {
   const availability = await checkAvailability({
     arrival_date: input.arrival_date,
@@ -57,14 +122,23 @@ const resolveStay = async (input) => {
     kids: input.kids,
     ages: input.ages
   });
-  const option = resolveAuthoritativeOption(availability, input.roomId, input.rateplanId);
-  if (!option) {
-    throw new ValidationError("A opção escolhida não está mais disponível para estas datas. Refaça a busca.");
-  }
   const nights = nightsBetween(input.arrival_date, input.departure_date);
-  const totalPrice =
-    config.artax.priceMode === "per_night" ? Number((option.price * nights).toFixed(2)) : option.price;
-  return { option, totalPrice, amountCents: Math.round(totalPrice * 100) };
+
+  let totalPrice = 0;
+  const rooms = input.rooms.map(({ roomId, rateplanId }) => {
+    const option = resolveAuthoritativeOption(availability, roomId, rateplanId);
+    if (!option) {
+      throw new ValidationError("Uma das acomodações selecionadas não está mais disponível para estas datas. Refaça a busca.");
+    }
+    const roomTotal = config.artax.priceMode === "per_night"
+      ? Number((option.price * nights).toFixed(2))
+      : option.price;
+    totalPrice += roomTotal;
+    return { roomId, option, totalPrice: roomTotal };
+  });
+
+  totalPrice = Number(totalPrice.toFixed(2));
+  return { rooms, totalPrice, amountCents: Math.round(totalPrice * 100) };
 };
 
 /**
@@ -74,37 +148,60 @@ const resolveStay = async (input) => {
  *  - pix: o valor já foi recebido; não há refund PIX automático aqui, então
  *         alertamos para DEVOLUÇÃO MANUAL e orientamos o cliente a contatar a pousada.
  */
-const bookStay = async ({ input, option, totalPrice, reference, tid, amountCents, method = "card" }) => {
+const bookStay = async ({ input, rooms, reference, tid, amountCents, method = "card" }) => {
+  const guestEntry = [
+    {
+      first_name: input.guest.first_name,
+      last_name: input.guest.last_name,
+      document: input.guest.document,
+      document_type: input.guest.document_type,
+      phone: input.guest.phone,
+      email: input.guest.email
+    }
+  ];
+
+  const room_units = {};
+  for (const room of rooms) {
+    room_units[room.roomId] = {
+      rateplan_id: room.option.rateplanId,
+      price: room.totalPrice,
+      adults: input.adults,
+      kids: input.kids,
+      ages: input.ages,
+      guests: guestEntry
+    };
+  }
+
+  const paymentLabel = method === "pix" ? "PIX" : "Rede";
   const bookingPayload = {
     arrival_date: input.arrival_date,
     departure_date: input.departure_date,
-    rateplan_id: option.rateplanId,
+    // Mantido no topo para compatibilidade com o contrato legado do Artax.
+    rateplan_id: rooms[0].option.rateplanId,
     status: config.artax.bookingStatus, // 2 = Confirmado (criada só após pagamento)
-    comment: [input.comment, `Pagamento Rede TID ${tid} ref ${reference}`].filter(Boolean).join(" | "),
+    comment: [
+      input.comment,
+      `Acomodações: ${rooms.map((room) => room.option.roomName).join(", ")}`,
+      `Pagamento ${paymentLabel} TID ${tid} ref ${reference}`
+    ].filter(Boolean).join(" | "),
     guest: input.guest,
-    room_units: {
-      [input.roomId]: {
-        price: totalPrice,
-        adults: input.adults,
-        kids: input.kids,
-        ages: input.ages,
-        guests: [
-          {
-            first_name: input.guest.first_name,
-            last_name: input.guest.last_name,
-            document: input.guest.document,
-            document_type: input.guest.document_type,
-            phone: input.guest.phone,
-            email: input.guest.email
-          }
-        ]
-      }
-    }
+    room_units
   };
 
   try {
     const booking = await createBooking(bookingPayload);
-    return { booking_id: booking.booking_id, room: { id: input.roomId, name: option.roomName, rateplan_id: option.rateplanId } };
+    const bookedRooms = rooms.map((room) => ({
+      id: room.roomId,
+      name: room.option.roomName,
+      rateplan_id: room.option.rateplanId,
+      price: room.totalPrice
+    }));
+    return {
+      booking_id: booking.booking_id,
+      rooms: bookedRooms,
+      // O checkout legado renderiza data.room.name.
+      ...(bookedRooms.length === 1 ? { room: bookedRooms[0] } : {})
+    };
   } catch (error) {
     console.error("[checkout] Reserva falhou após pagamento.", { method, tid, reference },
       error instanceof ArtaxError ? error.payload : error.message);
@@ -119,10 +216,14 @@ const bookStay = async ({ input, option, totalPrice, reference, tid, amountCents
         console.error("[checkout] FALHA NO ESTORNO — intervenção manual necessária.", { tid, reference, amountCents });
       }
       if (refunded) {
-        throw new Error("Não foi possível concluir a reserva. O pagamento foi cancelado (você não foi cobrado). Tente novamente.");
+        const canceled = new Error("Não foi possível concluir a reserva. O pagamento foi cancelado (você não foi cobrado). Tente novamente.");
+        canceled.status = 502;
+        canceled.expose = true;
+        throw canceled;
       }
       const fatal = new Error(`Pagamento autorizado mas a reserva e o cancelamento falharam. Guarde o comprovante (TID ${tid}) e contate a pousada.`);
       fatal.status = 500;
+      fatal.expose = true;
       throw fatal;
     }
 
@@ -130,6 +231,7 @@ const bookStay = async ({ input, option, totalPrice, reference, tid, amountCents
     console.error("[checkout] PIX PAGO mas a reserva falhou — DEVOLUÇÃO MANUAL necessária.", { tid, reference, amountCents });
     const fatal = new Error(`Recebemos seu PIX, mas houve uma falha ao confirmar a reserva. Guarde o comprovante (TID ${tid}) e contate a pousada para regularizar.`);
     fatal.status = 500;
+    fatal.expose = true;
     throw fatal;
   }
 };
@@ -146,7 +248,7 @@ const registerArtaxPayment = async (bookingId, { method, totalPrice, installment
     installments: Math.max(1, Number(installments) || 1),
     due_date: new Date().toISOString().slice(0, 10),
     confirmed,
-    obs: `Pagamento via site (Rede)`
+    obs: `Pagamento via site (${method === "pix" ? "PIX" : "Rede"})`
   };
   if (config.artax.costCenterId) payment.cost_center_id = config.artax.costCenterId;
 
@@ -163,8 +265,8 @@ const registerArtaxPayment = async (bookingId, { method, totalPrice, installment
 
 /* ============ CARTÃO: pré-autoriza → cria reserva → captura ============ */
 export const processCheckout = async (input) => {
-  const { option, totalPrice, amountCents } = await resolveStay(input);
-  const reference = `CZ-${Date.now()}-${randomUUID().slice(0, 8)}`;
+  const { rooms, totalPrice, amountCents } = await resolveStay(input);
+  const reference = `VZ-${Date.now()}-${randomUUID().slice(0, 8)}`;
 
   // 1) Pré-autorização (NÃO cobra ainda — só reserva o limite).
   const auth = await authorize({ amountCents, reference, installments: input.installments, card: input.card });
@@ -175,7 +277,7 @@ export const processCheckout = async (input) => {
   }
 
   // 2) Cria a reserva no Artax (se falhar, bookStay cancela a pré-autorização → cliente não é cobrado).
-  const booked = await bookStay({ input, option, totalPrice, reference, tid: auth.tid, amountCents });
+  const booked = await bookStay({ input, rooms, reference, tid: auth.tid, amountCents });
 
   // 3) Reserva garantida → captura (só agora cobra de fato).
   let captured = true;
@@ -194,15 +296,30 @@ export const processCheckout = async (input) => {
     confirmed: captured
   });
 
+  // Nunca sinaliza sucesso ao navegador quando a reserva existe, mas a
+  // captura ainda exige intervenção. Isso evita exibir "Pago" indevidamente
+  // e orienta o hóspede a não repetir a compra.
+  if (!captured) {
+    const pendingCapture = new Error(
+      `A reserva nº ${booked.booking_id} foi criada, mas o pagamento ainda precisa de confirmação. Não tente novamente; contate a recepção e informe esse número.`
+    );
+    pendingCapture.status = 502;
+    pendingCapture.expose = true;
+    throw pendingCapture;
+  }
+
   // E-mail de confirmação — SÓ após o pagamento (cartão efetivamente capturado).
   // Não bloqueia a resposta ao cliente.
   if (captured) {
-    fireConfirmationEmail({ input, option, totalPrice, bookingId: booked.booking_id, method: "card", tid: auth.tid });
+    fireConfirmationEmail({ input, rooms, totalPrice, bookingId: booked.booking_id, method: "card", tid: auth.tid });
+    fireAsksuiteNotification({ input, rooms, totalPrice, bookingId: booked.booking_id, method: "card", tid: auth.tid });
+    fireAsksuitePurchaseTracking({ input, rooms, bookingId: booked.booking_id });
   }
 
   return {
     booking_id: booked.booking_id,
-    room: booked.room,
+    rooms: booked.rooms,
+    ...(booked.room ? { room: booked.room } : {}),
     payment: {
       method: "card",
       tid: auth.tid,
@@ -230,19 +347,19 @@ const cleanupPix = () => {
 
 // A Rede exige reference de até 16 caracteres alfanuméricos para o PIX.
 const pixReference = () =>
-  ("CZ" + Date.now().toString(36) + randomUUID().replace(/-/g, ""))
+  ("VZ" + Date.now().toString(36) + randomUUID().replace(/-/g, ""))
     .replace(/[^A-Za-z0-9]/g, "")
     .slice(0, 16);
 
 export const createPixCharge = async (input) => {
   cleanupPix();
-  const { option, totalPrice, amountCents } = await resolveStay(input);
+  const { rooms, totalPrice, amountCents } = await resolveStay(input);
   const reference = pixReference();
 
   let tid, qrCode, qrImage = "", expiresInSec;
   if (config.pixProvider === "itau") {
     tid = itauTxid();
-    const cob = await createCob({ txid: tid, amountCents, solicitacaoPagador: "Reserva Vila Zanotto Piri" });
+    const cob = await createCob({ txid: tid, amountCents, solicitacaoPagador: "Reserva Villa Zanotto Piri" });
     qrCode = cob.pixCopiaECola;
     expiresInSec = config.itau.expiracao;
   } else {
@@ -256,7 +373,18 @@ export const createPixCharge = async (input) => {
   }
   console.log("[pix] criado", { provider: config.pixProvider, tid, reference, amountCents });
 
-  pendingPix.set(tid, { provider: config.pixProvider, input, option, totalPrice, amountCents, reference, bookingId: null, room: null, createdAt: Date.now() });
+  pendingPix.set(tid, {
+    provider: config.pixProvider,
+    input,
+    rooms,
+    totalPrice,
+    amountCents,
+    reference,
+    bookingId: null,
+    bookedRooms: null,
+    room: null,
+    createdAt: Date.now()
+  });
 
   return {
     tid,
@@ -270,7 +398,8 @@ export const createPixCharge = async (input) => {
 const paidPixResult = (entry, tid) => ({
   status: "paid",
   booking_id: entry.bookingId,
-  room: entry.room,
+  rooms: entry.bookedRooms,
+  ...(entry.room ? { room: entry.room } : {}),
   payment: { method: "pix", tid, reference: entry.reference, amount: entry.totalPrice, registered: entry.registered }
 });
 
@@ -305,14 +434,14 @@ export const confirmPix = async (tid) => {
     entry.bookingPromise = (async () => {
       const booked = await bookStay({
         input: entry.input,
-        option: entry.option,
-        totalPrice: entry.totalPrice,
+        rooms: entry.rooms,
         reference: entry.reference,
         tid,
         amountCents: entry.amountCents,
         method: "pix"
       });
       entry.bookingId = booked.booking_id;
+      entry.bookedRooms = booked.rooms;
       entry.room = booked.room;
       entry.registered = await registerArtaxPayment(booked.booking_id, {
         method: "pix",
@@ -321,7 +450,9 @@ export const confirmPix = async (tid) => {
         confirmed: true
       });
       // E-mail de confirmação — dentro do bookingPromise (roda uma vez por cobrança).
-      fireConfirmationEmail({ input: entry.input, option: entry.option, totalPrice: entry.totalPrice, bookingId: booked.booking_id, method: "pix", tid });
+      fireConfirmationEmail({ input: entry.input, rooms: entry.rooms, totalPrice: entry.totalPrice, bookingId: booked.booking_id, method: "pix", tid });
+      fireAsksuiteNotification({ input: entry.input, rooms: entry.rooms, totalPrice: entry.totalPrice, bookingId: booked.booking_id, method: "pix", tid });
+      fireAsksuitePurchaseTracking({ input: entry.input, rooms: entry.rooms, bookingId: booked.booking_id });
       return booked;
     })().catch((err) => {
       entry.bookingPromise = null; // libera p/ nova tentativa se falhou

@@ -4,7 +4,7 @@ import { config } from "./config.js";
  * Envio de e-mail de confirmação de reserva via Resend (HTTP API, sem SDK).
  * Seguro por padrão: se RESEND_API_KEY/RESEND_FROM não estiverem setados, faz
  * no-op (loga aviso) — nunca derruba o fluxo de reserva. Marca por variável de
- * ambiente (BRAND_*), então o mesmo código serve Casa e Vila.
+ * ambiente (BRAND_*), com defaults da Villa Zanotto Piri.
  */
 
 const RESEND_URL = "https://api.resend.com/emails";
@@ -32,8 +32,12 @@ export const isEmailEnabled = () => Boolean(config.email.apiKey && config.email.
 /* ------------------------------- template ------------------------------- */
 export const renderHtml = (d) => {
   const brand = esc(config.email.brandName);
-  const color = config.email.brandColor || "#c8991f";
-  const room = esc(cleanRoom(d.roomName));
+  const color = config.email.brandColor || "#F1BC0B";
+  // `roomName` continua aceito para chamadas legadas diretas do template.
+  const rooms = Array.isArray(d.rooms) && d.rooms.length
+    ? d.rooms
+    : (d.roomName ? [{ name: d.roomName }] : []);
+  const room = esc(rooms.map((item) => cleanRoom(item.name)).join(", ") || "—");
   const logo = config.email.logoUrl
     ? `<img src="${esc(config.email.logoUrl)}" alt="${brand}" height="80" style="height:80px;width:auto;max-width:300px;display:block;margin:0 auto;border:0;outline:none;">`
     : `<div style="font:700 22px/1.2 Georgia,serif;color:#1e1a17;text-align:center;">${brand}</div>`;
@@ -72,7 +76,12 @@ export const renderHtml = (d) => {
             ${row("Check-in", esc(fmtDate(d.checkIn)))}
             ${row("Check-out", esc(fmtDate(d.checkOut)))}
             ${row("Noites", esc(d.nights))}
-            ${row("Acomodação", room)}
+            ${rooms.length > 1
+              ? rooms.map((item) => row(
+                  "Acomodação",
+                  `${esc(cleanRoom(item.name))} <small style="color:#9a9a9a;">(${esc(brl(item.price))})</small>`
+                )).join("")
+              : row("Acomodação", room)}
             ${row("Hóspedes", esc(guestsLabel(d.adults, d.kids)))}
             ${row("Pagamento", esc(methodLabel(d.method)))}
             ${row("Total pago", `<span style="color:${color};">${esc(brl(d.totalPrice))}</span>`, true)}
@@ -100,7 +109,13 @@ const renderText = (d) =>
     `Check-in:   ${fmtDate(d.checkIn)}`,
     `Check-out:  ${fmtDate(d.checkOut)}`,
     `Noites:     ${d.nights}`,
-    `Acomodação: ${cleanRoom(d.roomName)}`,
+    ...(
+      Array.isArray(d.rooms) && d.rooms.length
+        ? d.rooms.map((item, index) => d.rooms.length > 1
+            ? `Acomodação ${index + 1}: ${cleanRoom(item.name)} (${brl(item.price)})`
+            : `Acomodação: ${cleanRoom(item.name)}`)
+        : [`Acomodação: ${cleanRoom(d.roomName) || "—"}`]
+    ),
     `Hóspedes:   ${guestsLabel(d.adults, d.kids)}`,
     `Pagamento:  ${methodLabel(d.method)}`,
     `Total pago: ${brl(d.totalPrice)}`,

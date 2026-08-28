@@ -25,6 +25,96 @@ const parseJsonSafe = async (response) => {
   }
 };
 
+// Fotos locais publicadas junto do site. Sao usadas apenas quando o Artax nao
+// devolve uma galeria propria, garantindo URLs absolutas para parceiros.
+const ROOM_FALLBACK_IMAGES = {
+  bangalo: [
+    "5-2-scaled.webp",
+    "1-2-1-scaled.webp",
+    "2-1-1-scaled.webp",
+    "22-scaled.webp",
+    "8-scaled.webp",
+    "4-scaled.webp"
+  ],
+  "flat-casal": ["Flat-21-scaled.webp", "Flat-23-scaled.webp", "Flat-31-scaled.webp"],
+  "flat-triplo": [
+    "Flat-31-scaled.webp",
+    "Flat-32-scaled.webp",
+    "Flat-33-scaled.webp",
+    "Flat-36-scaled.webp",
+    "Flat-312-scaled.webp",
+    "Flat-313-scaled.webp"
+  ],
+  "flat-quadruplo": ["Flat-4-scaled.webp", "Flat-43-scaled.webp", "Flat-44-scaled.webp", "Flat-45-scaled.webp"]
+};
+
+const roomKindFromName = (name) => {
+  const normalized = String(name || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+  if (normalized.includes("bangal")) return "bangalo";
+  if (normalized.includes("quadru") || /flat\s*4\b/.test(normalized)) return "flat-quadruplo";
+  if (normalized.includes("tripl") || /flat\s*3\b/.test(normalized)) return "flat-triplo";
+  if (normalized.includes("casal") || /flat\s*2\b/.test(normalized) || normalized.includes("flat")) return "flat-casal";
+  return null;
+};
+
+const fallbackRoomImages = (roomName) => {
+  const filenames = ROOM_FALLBACK_IMAGES[roomKindFromName(roomName)] || [];
+  return filenames.map((filename) => `${config.siteUrl}/assets/gallery/${filename}`);
+};
+
+const imageValues = (value) => {
+  if (!value) return [];
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(imageValues);
+  if (typeof value !== "object") return [];
+  const knownKeys = ["url", "src", "href", "path", "image", "large", "medium", "thumbnail", "thumb"];
+  const knownValues = knownKeys.flatMap((key) => imageValues(value[key]));
+  return knownValues.length ? knownValues : Object.values(value).flatMap(imageValues);
+};
+
+const absoluteImageUrl = (value) => {
+  const src = String(value || "").trim();
+  if (!src || !/\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(src)) return null;
+  try {
+    return new URL(src, `${config.artax.baseUrl}/`).href;
+  } catch {
+    return null;
+  }
+};
+
+const existingRoomImages = (option) => {
+  const fields = [
+    "main_image", "image", "photo", "cover", "cover_image", "thumbnail",
+    "images", "photos", "pictures", "gallery", "media", "room_images"
+  ];
+  return [...new Set(
+    fields
+      .flatMap((field) => imageValues(option?.[field]))
+      .map(absoluteImageUrl)
+      .filter(Boolean)
+  )];
+};
+
+/** Preserva fotos do Artax e usa a galeria da Villa somente como fallback. */
+const enrichRoomImages = (data) => {
+  if (!data?.rooms || Array.isArray(data.rooms)) return data;
+  for (const plans of Object.values(data.rooms)) {
+    for (const option of Object.values(plans || {})) {
+      if (!option || typeof option !== "object") continue;
+      const images = existingRoomImages(option);
+      const resolved = images.length ? images : fallbackRoomImages(option?.room_name);
+      if (resolved.length) {
+        option.images = resolved;
+        option.image = resolved[0];
+      }
+    }
+  }
+  return data;
+};
+
 /**
  * Verifica disponibilidade de quartos.
  * GET /rooms/availability — parâmetros enviados na query string.
@@ -42,7 +132,7 @@ export const checkAvailability = async ({ arrival_date, departure_date, adults, 
   if (!response.ok) {
     throw new ArtaxError(data.error || "Falha ao consultar disponibilidade.", response.status, data);
   }
-  return data;
+  return enrichRoomImages(data);
 };
 
 /**

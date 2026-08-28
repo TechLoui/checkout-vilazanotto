@@ -4,71 +4,82 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex">
-    <title>Reserva e pagamento · Vila Zanotto Piri</title>
+    <meta name="theme-color" content="#F1BC0B">
+    <title>Reserva e pagamento · Villa Zanotto Piri</title>
     <link rel="icon" type="image/png" href="assets/icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Lora:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="checkout.css?v=20260701-vila2">
-    <!-- Backend (Railway): TROQUE pela URL pública do serviço Railway do Vila quando criá-lo. -->
+    <link rel="stylesheet" href="checkout.css?v=20260828-vila7">
+    <!-- Backend de produção no Railway. Credenciais permanecem somente no servidor. -->
     <script>
       if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
         window.VZ_CHECKOUT_API = "https://checkout-vilazanotto-production.up.railway.app/api";
       }
     </script>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-    <script src="checkout.js?v=20260701-vila2" defer></script>
+    <script src="checkout.js?v=20260828-vila7" defer></script>
   </head>
-  <body>
+  <body data-step="1" data-topic="availability:dates">
+    <a class="skip-link" href="#checkout-content">Ir para o conteúdo da reserva</a>
     <div class="checkout-bg" aria-hidden="true"></div>
 
     <header class="checkout-header">
-      <a class="brand brand--logo-only" href="#" aria-label="Vila Zanotto Piri">
-        <img src="assets/logo.png" alt="Vila Zanotto Piri">
+      <a class="brand brand--logo-only" href="index.html" aria-label="Villa Zanotto Piri">
+        <img src="assets/logo.png" alt="Villa Zanotto Piri">
       </a>
       <div class="header-actions">
-        <a class="back-link" href="#top">
+        <a class="back-link" href="index.html#topo">
           <i data-lucide="arrow-up" aria-hidden="true"></i>
           Início
         </a>
         <span class="secure-badge">
           <i data-lucide="shield-check" aria-hidden="true"></i>
-          Checkout 100% seguro
+          <span>Ambiente de pagamento seguro</span>
         </span>
       </div>
     </header>
 
-    <main class="checkout-wrap">
-      <a class="checkout-logo" href="#" aria-label="Vila Zanotto Piri">
-        <img src="assets/logo.png" alt="Vila Zanotto Piri">
+    <main class="checkout-wrap" id="checkout-content">
+      <h1 class="sr-only">Reserve sua estadia na Villa Zanotto Piri</h1>
+      <a class="checkout-logo" href="index.html#topo" target="_top" aria-label="Villa Zanotto Piri">
+        <img src="assets/logo.png" alt="Villa Zanotto Piri">
       </a>
-      <nav class="steps" aria-label="Etapas da reserva">
-        <span class="step-chip is-active" data-step="1">
+      <ol class="steps" aria-label="Progresso da reserva">
+        <li class="step-chip is-active" data-step="1" aria-current="step">
           <span class="step-index">1</span>
           <span><i data-lucide="calendar-search" aria-hidden="true"></i> Disponibilidade</span>
-        </span>
-        <span class="step-chip" data-step="2">
+        </li>
+        <li class="step-chip" data-step="2">
           <span class="step-index">2</span>
           <span><i data-lucide="bed-double" aria-hidden="true"></i> Acomodação</span>
-        </span>
-        <span class="step-chip" data-step="3">
+        </li>
+        <li class="step-chip" data-step="3">
           <span class="step-index">3</span>
           <span><i data-lucide="credit-card" aria-hidden="true"></i> Pagamento</span>
-        </span>
-        <span class="step-chip" data-step="4">
+        </li>
+        <li class="step-chip" data-step="4">
           <span class="step-index">4</span>
           <span><i data-lucide="check-circle" aria-hidden="true"></i> Confirmação</span>
-        </span>
-      </nav>
+        </li>
+      </ol>
+
+      <div class="checkout-assurances" aria-label="Vantagens da reserva online">
+        <span><i data-lucide="badge-check" aria-hidden="true"></i> Reserva direta</span>
+        <span><i data-lucide="receipt-text" aria-hidden="true"></i> Valor transparente</span>
+        <span><i data-lucide="message-circle-heart" aria-hidden="true"></i> Atendimento Villa Zanotto</span>
+      </div>
 
       <div id="notice" class="notice is-hidden" role="alert"></div>
+      <p class="sr-only" data-checkout-status aria-live="polite"></p>
 
       <div class="layout">
         <div class="flow-column">
           <section class="panel" data-view="1" aria-labelledby="step-1-title">
             <div class="panel-heading">
               <span class="panel-kicker">Etapa 1 de 4</span>
-              <h2 id="step-1-title" data-searchtitle>Quando você vem?</h2>
+              <h2 id="step-1-title" data-searchtitle tabindex="-1">Quando você vem?</h2>
+              <p class="panel-intro" data-searchintro>Escolha as datas da estadia.</p>
             </div>
 
             <form id="search-form">
@@ -77,15 +88,15 @@
                 <div class="field col-2">
                   <div class="rangecal" data-cal>
                     <div class="rangecal-summary">
-                      <div class="rc-pill" data-cal-infield>
+                      <button class="rc-pill" type="button" data-cal-infield aria-label="Selecionar data de check-in">
                         <small>Check-in</small>
                         <strong data-cal-in>Selecionar</strong>
-                      </div>
+                      </button>
                       <i data-lucide="arrow-right" aria-hidden="true"></i>
-                      <div class="rc-pill" data-cal-outfield>
+                      <button class="rc-pill" type="button" data-cal-outfield aria-label="Selecionar data de check-out">
                         <small>Check-out</small>
                         <strong data-cal-out>Selecionar</strong>
-                      </div>
+                      </button>
                     </div>
                     <p class="rangecal-hint" data-cal-hint>Selecione a data de <b>check-in</b>.</p>
                     <div class="rangecal-head">
@@ -110,7 +121,7 @@
               <div class="searchstep is-hidden" data-searchstep="guests">
                 <div class="grid">
                   <div class="field">
-                    <label>Adultos <span class="hint">maiores de 13 anos</span></label>
+                    <label for="adults">Adultos <span class="hint">maiores de 13 anos</span></label>
                     <div class="stepper" data-min="1" data-max="9">
                       <button type="button" data-dec aria-label="Menos adultos">-</button>
                       <input id="adults" name="adults" type="text" inputmode="numeric" value="2" readonly aria-live="polite">
@@ -118,7 +129,7 @@
                     </div>
                   </div>
                   <div class="field">
-                    <label>Crianças <span class="hint">0 a 12 anos</span></label>
+                    <label for="kids">Crianças <span class="hint">0 a 12 anos</span></label>
                     <div class="stepper" data-min="0" data-max="6">
                       <button type="button" data-dec aria-label="Menos crianças">-</button>
                       <input id="kids" name="kids" type="text" inputmode="numeric" value="0" readonly aria-live="polite">
@@ -148,13 +159,15 @@
             <div class="panel-heading split">
               <div>
                 <span class="panel-kicker">Etapa 2 de 4</span>
-                <h2 id="step-2-title">Acomodações disponíveis</h2>
+                <h2 id="step-2-title" tabindex="-1">Acomodações</h2>
+                <p class="panel-intro">Veja as fotos e escolha.</p>
               </div>
               <button class="btn btn-ghost btn-inline" type="button" id="back-to-search">
                 <i data-lucide="arrow-left" aria-hidden="true"></i>
                 Alterar datas
               </button>
             </div>
+            <p class="room-results-status" data-room-results-status aria-live="polite"></p>
             <div class="room-list" id="room-list" aria-live="polite"></div>
             <div class="room-carousel-nav" data-room-nav>
               <button class="rcn-btn" type="button" data-rn-prev aria-label="Quarto anterior"><i data-lucide="chevron-left" aria-hidden="true"></i></button>
@@ -166,7 +179,8 @@
           <section class="panel is-hidden" data-view="3" aria-labelledby="step-3-title">
             <div class="panel-heading">
               <span class="panel-kicker">Etapa 3 de 4</span>
-              <h2 id="step-3-title" data-paystep-title>Forma de pagamento</h2>
+              <h2 id="step-3-title" data-paystep-title tabindex="-1">Forma de pagamento</h2>
+              <p class="panel-intro" data-paystep-intro>Escolha PIX ou cartão.</p>
             </div>
 
             <ol class="paysteps" aria-label="Sub-etapas do pagamento">
@@ -196,7 +210,7 @@
                     <span class="pay-opt-ic"><i data-lucide="qr-code" aria-hidden="true"></i></span>
                     <span class="pay-opt-txt">
                       <strong>PIX</strong>
-                      <small>Aprovação na hora · QR Code ou copia e cola</small>
+                      <small>Aprovação imediata</small>
                     </span>
                     <span class="pay-opt-check"><i data-lucide="check" aria-hidden="true"></i></span>
                   </button>
@@ -204,7 +218,7 @@
                     <span class="pay-opt-ic"><i data-lucide="credit-card" aria-hidden="true"></i></span>
                     <span class="pay-opt-txt">
                       <strong>Cartão de crédito</strong>
-                      <small>Em até 6x sem juros</small>
+                      <small data-card-installments>Em até 6x sem juros</small>
                     </span>
                     <span class="pay-opt-check"><i data-lucide="check" aria-hidden="true"></i></span>
                   </button>
@@ -255,7 +269,7 @@
                     <div class="grid">
                       <div class="field col-2">
                         <label for="g-phone">Telefone (com DDD)*</label>
-                        <input id="g-phone" name="phone" inputmode="tel" autocomplete="tel" placeholder="(62) 99999-9999" required>
+                        <input id="g-phone" name="phone" inputmode="tel" autocomplete="tel" placeholder="(64) 99999-9999" required>
                       </div>
                       <div class="field col-2">
                         <label for="g-email">E-mail</label>
@@ -308,13 +322,13 @@
               <div class="paystep is-hidden" data-paystep="pay">
                 <p class="notice info">
                   <i data-lucide="lock" aria-hidden="true"></i>
-                  Seus dados de cartão trafegam criptografados e não são armazenados em nosso site.
+                  Pagamento criptografado. O cartão não fica salvo.
                 </p>
 
                 <div class="pay-pane" data-pane="pix">
                   <p class="pay-hint">
                     <i data-lucide="zap" aria-hidden="true"></i>
-                    Gere o QR Code e pague pelo app do seu banco — a reserva é confirmada na hora.
+                    Escaneie ou copie o código. Confirmação imediata.
                   </p>
                   <div class="pix-result is-hidden" data-pix-result>
                     <div class="pix-qr"><img data-pix-img alt="QR Code do PIX"></div>
@@ -331,7 +345,7 @@
                 </div>
 
                 <div class="pay-pane is-hidden" data-pane="card">
-                  <div class="card-preview" data-card-preview data-brand="">
+                  <div class="card-preview" data-card-preview data-brand="" aria-hidden="true">
                     <div class="cardp-top">
                       <span class="cardp-chip" aria-hidden="true"></span>
                       <span class="cardp-brand" data-cardp-brand></span>
@@ -347,19 +361,19 @@
                     <div class="grid">
                       <div class="field col-2">
                         <label for="c-number">Número do cartão*</label>
-                        <input id="c-number" name="cardNumber" inputmode="numeric" autocomplete="cc-number" placeholder="0000 0000 0000 0000" maxlength="23">
+                        <input id="c-number" name="cardNumber" inputmode="numeric" autocomplete="cc-number" placeholder="0000 0000 0000 0000" maxlength="23" required>
                       </div>
                       <div class="field col-2">
                         <label for="c-name">Nome impresso no cartão*</label>
-                        <input id="c-name" name="holderName" autocomplete="cc-name">
+                        <input id="c-name" name="holderName" autocomplete="cc-name" required>
                       </div>
                       <div class="field">
                         <label for="c-exp">Validade (MM/AA)*</label>
-                        <input id="c-exp" name="exp" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/AA" maxlength="5">
+                        <input id="c-exp" name="exp" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/AA" maxlength="5" required>
                       </div>
                       <div class="field">
                         <label for="c-cvv">CVV*</label>
-                        <input id="c-cvv" name="cvv" inputmode="numeric" autocomplete="cc-csc" placeholder="123" maxlength="4">
+                        <input id="c-cvv" name="cvv" inputmode="numeric" autocomplete="cc-csc" placeholder="123" minlength="3" maxlength="4" required>
                       </div>
                       <div class="field col-2">
                         <label for="c-inst">Parcelas</label>
@@ -387,13 +401,13 @@
             <div class="success-card">
               <div class="check"><i data-lucide="check" aria-hidden="true"></i></div>
               <span class="panel-kicker">Etapa 4 de 4</span>
-              <h2 id="step-4-title">Reserva confirmada!</h2>
-              <p class="lede">Recebemos seu pagamento e sua reserva foi criada com sucesso.</p>
+              <h2 id="step-4-title" tabindex="-1">Reserva confirmada!</h2>
+              <p class="lede">Pagamento aprovado e reserva confirmada.</p>
               <div class="booking-id" id="booking-id"></div>
               <p class="success-email" data-success-email></p>
               <div id="success-details" class="summary-body success-details"></div>
               <div class="form-actions">
-                <a class="btn btn-primary" href="index.html">Voltar ao site</a>
+                <a class="btn btn-primary" href="index.html" target="_top">Voltar ao site</a>
               </div>
             </div>
           </section>
@@ -401,7 +415,7 @@
 
         <aside class="summary" id="summary" aria-label="Resumo da reserva">
           <figure class="summary-media">
-            <img id="sum-image" src="assets/logo.png" alt="Vila Zanotto Piri">
+            <img id="sum-image" src="assets/logo.png" alt="Villa Zanotto Piri">
           </figure>
           <div class="summary-head">
             <small>Resumo da reserva</small>
@@ -418,21 +432,50 @@
             <span><i data-lucide="shield-check" aria-hidden="true"></i> Pagamento criptografado</span>
             <span><i data-lucide="lock" aria-hidden="true"></i> Checkout seguro</span>
           </div>
+          <p class="summary-help"><i data-lucide="info" aria-hidden="true"></i> A reserva é confirmada após a aprovação do pagamento.</p>
         </aside>
       </div>
     </main>
 
     <div class="cz-modal" data-noavail hidden>
-      <button class="cz-modal-backdrop" type="button" data-noavail-close aria-label="Fechar"></button>
+      <button class="cz-modal-backdrop" type="button" data-noavail-close aria-label="Fechar" tabindex="-1"></button>
       <div class="cz-modal-card" role="dialog" aria-modal="true" aria-labelledby="noavail-title">
         <span class="cz-modal-icon"><i data-lucide="calendar-x" aria-hidden="true"></i></span>
         <h3 id="noavail-title">Sem disponibilidade nessas datas</h3>
         <p>Não encontramos acomodações para o período e o número de hóspedes selecionados. Escolha outras datas ou ajuste os hóspedes e tente novamente.</p>
-        <button class="btn btn-primary" type="button" data-noavail-close>
+        <button class="btn btn-primary" type="button" data-noavail-close data-noavail-reset>
           <i data-lucide="calendar-search" aria-hidden="true"></i>
           Escolher outras datas
         </button>
       </div>
+    </div>
+
+    <div class="gallery-modal" data-gallery-modal hidden>
+      <button class="gallery-modal-backdrop" type="button" data-gallery-close aria-label="Fechar galeria" tabindex="-1"></button>
+      <section class="gallery-modal-card" role="dialog" aria-modal="true" aria-labelledby="gallery-modal-title">
+        <header class="gallery-modal-head">
+          <div>
+            <span class="panel-kicker">Galeria da acomodação</span>
+            <h2 id="gallery-modal-title" data-gallery-title>Fotos da acomodação</h2>
+          </div>
+          <button class="gallery-close" type="button" data-gallery-close aria-label="Fechar galeria">
+            <i data-lucide="x" aria-hidden="true"></i>
+          </button>
+        </header>
+        <div class="gallery-stage">
+          <button class="gallery-nav gallery-nav--prev" type="button" data-gallery-prev aria-label="Foto anterior">
+            <i data-lucide="chevron-left" aria-hidden="true"></i>
+          </button>
+          <figure>
+            <img data-gallery-image src="assets/gallery/5-2-scaled.webp" alt="">
+            <figcaption><span data-gallery-counter>1 de 1</span></figcaption>
+          </figure>
+          <button class="gallery-nav gallery-nav--next" type="button" data-gallery-next aria-label="Próxima foto">
+            <i data-lucide="chevron-right" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div class="gallery-thumbs" data-gallery-thumbs aria-label="Miniaturas da galeria"></div>
+      </section>
     </div>
   </body>
 </html>

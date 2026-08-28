@@ -7,6 +7,7 @@ import { config, assertConfig } from "./config.js";
 import { validateAvailability, validateCheckout, validatePix, ValidationError } from "./validation.js";
 import { checkAvailability, listCostCenters, ArtaxError } from "./artaxnet.js";
 import { RedeError } from "./rede.js";
+import { ItauError } from "./itau.js";
 import { processCheckout, createPixCharge, confirmPix, reconcilePendingPix } from "./bookingFlow.js";
 import { verifyArtaxWebhook, handleArtaxEvent } from "./webhooks.js";
 
@@ -21,7 +22,7 @@ app.use(
   cors({
     origin(origin, callback) {
       // Permite ferramentas locais (sem Origin) e as origens autorizadas.
-      if (!origin || config.allowedOrigins.length === 0 || config.allowedOrigins.includes(origin)) {
+      if (!origin || config.allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
       return callback(new Error("Origem não autorizada pelo CORS."));
@@ -57,6 +58,12 @@ app.use("/api/", apiLimiter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true, env: config.nodeEnv }));
 
+// Configuracao publica em lista positiva. Nunca inclua credenciais neste objeto.
+app.get("/api/config", (req, res) => {
+  res.set("Cache-Control", "public, max-age=300");
+  res.json({ maxInstallments: config.rede.maxInstallments });
+});
+
 // Normaliza o preço para TOTAL da estadia quando o Artax devolve por diária,
 // para o front sempre exibir o valor que será cobrado.
 const normalizeTotals = (data, nights) => {
@@ -73,8 +80,21 @@ const normalizeTotals = (data, nights) => {
   return data;
 };
 
+// Navegadores autorizados passam pelo CORS. Integracoes servidor-a-servidor
+// (sem Origin, como a Asksuite) precisam apresentar X-Api-Key.
+const requirePartnerKeyForServerCalls = (req, res, next) => {
+  if (req.headers.origin && config.allowedOrigins.includes(req.headers.origin)) return next();
+
+  const key = req.header("x-api-key");
+  const validKeys = Object.values(config.partnerApiKeys).filter(Boolean);
+  if (!key || !validKeys.includes(key)) {
+    return res.status(401).json({ error: "API key inválida ou ausente." });
+  }
+  return next();
+};
+
 // Disponibilidade de quartos.
-app.get("/api/availability", async (req, res, next) => {
+app.get("/api/availability", requirePartnerKeyForServerCalls, async (req, res, next) => {
   try {
     const params = validateAvailability({
       arrival_date: req.query.arrival_date,
@@ -130,6 +150,10 @@ app.post("/api/pix/status", async (req, res, next) => {
 // Autenticação por Bearer (REDE_WEBHOOK_TOKEN). Responde 200 rápido e processa depois.
 app.post("/api/webhooks/erede/pix", (req, res) => {
   const expected = config.rede.webhookToken;
+  if (!expected && config.isProduction) {
+    console.error("[webhook:pix] indisponível — REDE_WEBHOOK_TOKEN não configurado");
+    return res.status(503).json({ error: "Webhook não configurado." });
+  }
   if (expected && req.header("authorization") !== `Bearer ${expected}`) {
     console.warn("[webhook:pix] 401 — token inválido ou ausente");
     return res.status(401).json({ error: "Unauthorized" });
@@ -164,9 +188,14 @@ app.post("/api/webhooks/itau/pix", (req, res) => {
   }
 });
 
-// Centros de custo (útil para o painel; opcional).
+// Centros de custo (operação administrativa; protegido pelo token Artax).
 app.get("/api/cost-centers", async (req, res, next) => {
   try {
+    const expected = config.artax.webhookToken;
+    if (!expected) return res.status(503).json({ error: "Rota administrativa não configurada." });
+    if (req.header("authorization") !== `Bearer ${expected}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
     res.json(await listCostCenters());
   } catch (error) {
     next(error);
@@ -182,6 +211,13 @@ app.use((error, req, res, _next) => {
     console.warn("[server] RedeError:", { code: error.returnCode, message: error.message });
     return res.status(402).json({ error: error.message, code: error.returnCode });
   }
+  if (error instanceof ItauError) {
+    const status = Number.isInteger(error.status) && error.status >= 400 && error.status <= 599
+      ? error.status
+      : 503;
+    console.warn("[server] ItauError:", { status: error.status, message: error.message });
+    return res.status(status).json({ error: error.message });
+  }
   if (error instanceof ArtaxError) {
     return res.status(error.status >= 400 ? error.status : 502).json({ error: error.message });
   }
@@ -189,13 +225,18 @@ app.use((error, req, res, _next) => {
     return res.status(403).json({ error: error.message });
   }
   console.error("[server] Erro não tratado:", error);
-  return res.status(error.status || 500).json({
-    error: error.status ? error.message : "Erro interno. Tente novamente em instantes."
+  const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599
+    ? error.status
+    : 500;
+  return res.status(status).json({
+    error: status < 500 || error?.expose === true
+      ? error.message
+      : "Erro interno. Tente novamente em instantes."
   });
 });
 
 app.listen(config.port, () => {
-  console.log(`Vila Zanotto Piri checkout API rodando na porta ${config.port} (${config.nodeEnv})`);
+  console.log(`Villa Zanotto Piri checkout API rodando na porta ${config.port} (${config.nodeEnv})`);
 });
 
 // Reconciliação periódica do PIX: confirma pagamentos mesmo se o cliente fechou

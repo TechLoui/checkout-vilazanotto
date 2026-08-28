@@ -8,9 +8,27 @@ export class ValidationError extends Error {
   }
 }
 
-const isValidDate = (value) => DATE_RE.test(value) && !Number.isNaN(Date.parse(value));
+const isValidDate = (value) => {
+  if (!DATE_RE.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year
+    && parsed.getUTCMonth() === month - 1
+    && parsed.getUTCDate() === day;
+};
 
 const toDateOnly = (value) => new Date(`${value}T00:00:00Z`);
+
+const todayInPropertyTimezone = () => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+};
 
 const onlyDigits = (value) => String(value || "").replace(/\D/g, "");
 
@@ -24,6 +42,9 @@ export const validateAvailability = (q) => {
 
   if (!isValidDate(arrival_date) || !isValidDate(departure_date)) {
     throw new ValidationError("Datas inválidas. Use o formato YYYY-MM-DD.");
+  }
+  if (arrival_date < todayInPropertyTimezone()) {
+    throw new ValidationError("A data de check-in não pode estar no passado.");
   }
   if (toDateOnly(departure_date) <= toDateOnly(arrival_date)) {
     throw new ValidationError("A data de check-out deve ser maior que a de check-in.");
@@ -48,12 +69,27 @@ export const validateAvailability = (q) => {
 export const validateStayGuest = (body) => {
   const base = validateAvailability(body);
 
-  const roomId = String(body.room_id || "").trim();
-  const rateplanId = Number(body.rateplan_id);
-  if (!roomId) throw new ValidationError("Categoria de quarto não informada.");
-  if (!Number.isInteger(rateplanId) || rateplanId <= 0) {
-    throw new ValidationError("Plano tarifário inválido.");
-  }
+  // Contrato atual: rooms[]. Contrato legado: room_id/rateplan_id. Os dois
+  // permanecem aceitos para permitir deploy independente do site e da API.
+  const rawRooms = Array.isArray(body.rooms) && body.rooms.length
+    ? body.rooms
+    : (body.room_id ? [{ room_id: body.room_id, rateplan_id: body.rateplan_id }] : []);
+  if (!rawRooms.length) throw new ValidationError("Selecione ao menos uma acomodação.");
+
+  const seenRoomIds = new Set();
+  const rooms = rawRooms.map((room) => {
+    const roomId = String(room?.room_id || "").trim();
+    const rateplanId = Number(room?.rateplan_id);
+    if (!roomId) throw new ValidationError("Categoria de quarto não informada.");
+    if (!Number.isInteger(rateplanId) || rateplanId <= 0) {
+      throw new ValidationError("Plano tarifário inválido.");
+    }
+    if (seenRoomIds.has(roomId)) {
+      throw new ValidationError("Cada acomodação só pode ser selecionada uma vez.");
+    }
+    seenRoomIds.add(roomId);
+    return { roomId, rateplanId };
+  });
 
   const guest = body.guest || {};
   const firstName = String(guest.first_name || "").trim();
@@ -62,19 +98,31 @@ export const validateStayGuest = (body) => {
   if (phone.length < 10) throw new ValidationError("Telefone do hóspede é obrigatório e deve ser válido.");
   const guestType = guest.type === "company" ? "company" : "guest";
   const documentType = ["cpf", "rg", "passport"].includes(guest.document_type) ? guest.document_type : undefined;
+  const rawDocument = String(guest.document || "").trim();
+  const document = documentType === "passport"
+    ? rawDocument.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20)
+    : onlyDigits(rawDocument);
   if (guest.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guest.email)) {
     throw new ValidationError("E-mail do hóspede inválido.");
   }
 
+  // Identificador de sessão da Asksuite (_askSI), quando a reserva veio do
+  // link direto que a IA deles gera — usado pra vincular a compra ao
+  // atendimento no rastreio de conversão deles.
+  const askSi = String(body.ask_si || "").trim().slice(0, 200) || undefined;
+
   return {
     ...base,
-    roomId,
-    rateplanId,
+    rooms,
+    // Aliases internos legados: consumidores que importavam o validador
+    // continuam funcionando no fluxo de uma unica acomodacao.
+    ...(rooms.length === 1 ? { roomId: rooms[0].roomId, rateplanId: rooms[0].rateplanId } : {}),
+    askSi,
     comment: String(body.comment || "").slice(0, 500),
     guest: {
       first_name: firstName,
       last_name: String(guest.last_name || "").trim() || undefined,
-      document: onlyDigits(guest.document) || undefined,
+      document: document || undefined,
       document_type: documentType,
       phone,
       email: String(guest.email || "").trim() || undefined,

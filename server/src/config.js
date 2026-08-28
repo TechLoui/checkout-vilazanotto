@@ -4,15 +4,55 @@ dotenv.config();
 
 const required = ["ARTAX_CLIENT_ID", "ARTAX_CLIENT_SECRET"];
 
+// URL publica da hospedagem. Tambem e usada para montar URLs absolutas de
+// imagens consumidas por parceiros (como a Asksuite) e links dos e-mails.
+const SITE_URL = (process.env.SITE_URL || "https://villazanottopiri.com").replace(/\/$/, "");
+const SITE_WWW_URL = SITE_URL.includes("://www.")
+  ? SITE_URL.replace("://www.", "://")
+  : SITE_URL.replace("://", "://www.");
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+const defaultAllowedOrigins = [
+  SITE_URL,
+  SITE_WWW_URL,
+  "https://checkout-vilazanotto.netlify.app",
+  ...(IS_PRODUCTION ? [] : ["http://localhost:5500", "http://127.0.0.1:5500"])
+];
+
 export const config = {
   port: Number(process.env.PORT) || 8080,
   nodeEnv: process.env.NODE_ENV || "development",
-  isProduction: process.env.NODE_ENV === "production",
+  isProduction: IS_PRODUCTION,
+  siteUrl: SITE_URL,
 
-  allowedOrigins: (process.env.ALLOWED_ORIGINS || "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean),
+  // O domínio oficial e o checkout atual permanecem sempre liberados. Origens
+  // extras podem ser acrescentadas por ALLOWED_ORIGINS sem remover os defaults.
+  allowedOrigins: [...new Set([
+    ...defaultAllowedOrigins,
+    ...(process.env.ALLOWED_ORIGINS || "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  ])],
+
+  // Chave usada por integracoes servidor-a-servidor na disponibilidade.
+  // Parceiros enviam a chave no header X-Api-Key.
+  partnerApiKeys: {
+    asksuite: process.env.ASKSUITE_API_KEY || ""
+  },
+
+  // Notificacao de reserva confirmada para rastreio de conversao na Asksuite.
+  // Sem URL, o envio e um no-op e nunca interfere na reserva.
+  asksuite: {
+    webhookUrl: process.env.ASKSUITE_WEBHOOK_URL || "",
+    webhookSecret: process.env.ASKSUITE_WEBHOOK_SECRET || "",
+    // Nova API de rastreio por sessão (_askSI) pedida pelo Felippe (Asksuite),
+    // endpoint confirmado em 18/08/2026 (mesma chave usada em todos os
+    // clientes, confirmado por ele em 19/08/2026). Ver partners.js →
+    // notifyAsksuitePurchase.
+    purchaseApiUrl: (process.env.ASKSUITE_PURCHASE_API_URL || "https://cookies.asksuite.com/reservation/events").replace(/\/$/, ""),
+    purchaseApiKey: process.env.ASKSUITE_PURCHASE_API_KEY || ""
+  },
 
   artax: {
     baseUrl: (process.env.ARTAX_BASE_URL || "https://artaxnet.com/pms-api/v1").replace(/\/$/, ""),
@@ -42,11 +82,11 @@ export const config = {
     clientSecret: process.env.REDE_CLIENT_SECRET || "",
     oauthUrl: process.env.REDE_OAUTH_URL || "https://rl7-sandbox-api.useredecloud.com.br/oauth2/token",
     transactionsUrl: (process.env.REDE_TRANSACTIONS_URL || "https://sandbox-erede.useredecloud.com.br/v2/transactions").replace(/\/$/, ""),
-    softDescriptor: process.env.REDE_SOFT_DESCRIPTOR || "VilaZanotto",
+    softDescriptor: process.env.REDE_SOFT_DESCRIPTOR || "VillaZanotto",
     // O softDescriptor exige habilitação no portal da Rede. Se não estiver
     // habilitado, enviar causa returnCode 63. Só envia se REDE_SEND_SOFT_DESCRIPTOR=true.
     sendSoftDescriptor: process.env.REDE_SEND_SOFT_DESCRIPTOR === "true",
-    maxInstallments: Number(process.env.MAX_INSTALLMENTS) || 6,
+    maxInstallments: Math.min(12, Math.max(1, Math.floor(Number(process.env.MAX_INSTALLMENTS) || 6))),
     webhookToken: process.env.REDE_WEBHOOK_TOKEN || "",
 
     // Modo simulação: NÃO chama a Rede; finge pagamento aprovado.
@@ -70,22 +110,26 @@ export const config = {
     keyB64: process.env.ITAU_KEY_B64 || "",
     certPath: process.env.ITAU_CERT_PATH || "",
     keyPath: process.env.ITAU_KEY_PATH || "",
+    // Nova cadeia de certificados do Itaú (Root CA + intermediário) — migração
+    // de segurança com prazo 15/09/2026. Opcional (ver server/src/itau.js).
+    caB64: process.env.ITAU_CA_B64 || "",
+    caPath: process.env.ITAU_CA_PATH || "",
     expiracao: Number(process.env.ITAU_PIX_EXPIRACAO) || 900 // segundos de validade do QR
   },
 
-  // E-mail de confirmação (Resend). Marca por variável (BRAND_*) → mesmo código Casa/Vila.
+  // E-mail de confirmacao (Resend). Marca configuravel por BRAND_*.
   // Sem RESEND_API_KEY/RESEND_FROM o envio vira no-op (não quebra a reserva).
   email: {
     apiKey: process.env.RESEND_API_KEY || "",
-    from: process.env.RESEND_FROM || "", // ex.: "Vila Zanotto Piri <reservas@seudominio.com>"
-    replyTo: process.env.RESEND_REPLY_TO || "",
+    from: process.env.RESEND_FROM || "", // ex.: "Villa Zanotto Piri <reservas@seudominio.com>"
+    replyTo: process.env.RESEND_REPLY_TO || "reservas2@grupozanottohotelaria.com.br",
     bcc: process.env.RESEND_BCC || "", // cópia para a pousada (opcional)
-    brandName: process.env.BRAND_NAME || "Vila Zanotto Piri",
-    brandColor: process.env.BRAND_COLOR || "#f1bc0e",
-    logoUrl: process.env.BRAND_LOGO_URL || "https://checkout-vilazanotto.netlify.app/assets/logo.png",
-    siteUrl: process.env.BRAND_SITE_URL || "",
-    phone: process.env.BRAND_PHONE || "",
-    address: process.env.BRAND_ADDRESS || ""
+    brandName: process.env.BRAND_NAME || "Villa Zanotto Piri",
+    brandColor: process.env.BRAND_COLOR || "#F1BC0B",
+    logoUrl: process.env.BRAND_LOGO_URL || `${SITE_URL}/assets/logo.png`,
+    siteUrl: process.env.BRAND_SITE_URL || SITE_URL,
+    phone: process.env.BRAND_PHONE || "(62) 9989-0138",
+    address: process.env.BRAND_ADDRESS || "Rua Olívia de Pina, qd. 11, lotes 4 e 5, Vila Zizito, Pirenópolis/GO"
   }
 };
 

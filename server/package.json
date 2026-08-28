@@ -1,7 +1,7 @@
 {
-  "name": "vila-zanotto-checkout",
+  "name": "villa-zanotto-checkout",
   "version": "1.0.0",
-  "description": "Backend de checkout (e.Rede/Itaú PIX) + integração de reservas (ArtaxNet) da Vila Zanotto Piri",
+  "description": "Backend de checkout (e.Rede/Itaú PIX) e reservas (ArtaxNet) da Villa Zanotto Piri",
   "type": "module",
   "main": "src/server.js",
   "scripts": {

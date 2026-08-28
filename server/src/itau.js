@@ -20,22 +20,30 @@ class ItauError extends Error {
 /* ---- certificado + chave (base64 no Railway, ou caminho local em dev) ---- */
 let CERT = null;
 let KEY = null;
+let CA = null;
+let caLoaded = false;
 const loadCerts = () => {
-  if (CERT && KEY) return { cert: CERT, key: KEY };
-  const { certB64, keyB64, certPath, keyPath } = config.itau;
+  if (CERT && KEY && caLoaded) return { cert: CERT, key: KEY, ca: CA };
+  const { certB64, keyB64, certPath, keyPath, caB64, caPath } = config.itau;
   CERT = certB64 ? Buffer.from(certB64, "base64") : certPath && fs.existsSync(certPath) ? fs.readFileSync(certPath) : null;
   KEY = keyB64 ? Buffer.from(keyB64, "base64") : keyPath && fs.existsSync(keyPath) ? fs.readFileSync(keyPath) : null;
   if (!CERT || !KEY) {
     throw new ItauError("Certificado/chave do Itaú não configurados (ITAU_CERT_B64/ITAU_KEY_B64).", "config");
   }
-  return { cert: CERT, key: KEY };
+  // Nova cadeia (Root CA + intermediário) exigida pela migração de segurança
+  // do Itaú (prazo 15/09/2026 para secure.api.itau). Opcional: sem
+  // ITAU_CA_B64/ITAU_CA_PATH configurado, o Node usa o truststore padrão do
+  // sistema (suficiente se a nova CA for pública). Ver server/.env.example.
+  CA = caB64 ? Buffer.from(caB64, "base64") : caPath && fs.existsSync(caPath) ? fs.readFileSync(caPath) : undefined;
+  caLoaded = true;
+  return { cert: CERT, key: KEY, ca: CA };
 };
 
 /* ---- request mTLS ---- */
 const mtls = (url, { method = "GET", headers = {}, body } = {}) =>
   new Promise((resolve, reject) => {
-    const { cert, key } = loadCerts();
-    const req = https.request(new URL(url), { method, cert, key, headers }, (res) => {
+    const { cert, key, ca } = loadCerts();
+    const req = https.request(new URL(url), { method, cert, key, ca, headers }, (res) => {
       let d = "";
       res.on("data", (c) => (d += c));
       res.on("end", () => resolve({ status: res.statusCode, text: d }));
@@ -87,7 +95,7 @@ const apiHeaders = async (extra = {}) => ({
 
 /** txid no padrão BACEN (26–35 alfanuméricos). */
 export const itauTxid = () =>
-  ("CZ" + Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2))
+  ("VZ" + Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2))
     .replace(/[^a-zA-Z0-9]/g, "")
     .slice(0, 30);
 

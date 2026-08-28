@@ -36,12 +36,13 @@ const safeForLog = (data) => {
   delete clone.cardNumber;
   delete clone.securityCode;
   delete clone.cardHolderName;
+  delete clone.cardholderName;
   return clone;
 };
 
 /* ---- Simulação (PAYMENT_SIMULATE=true): finge aprovação sem chamar a Rede ---- */
 const SIM_QR =
-  "00020126580014br.gov.bcb.pix0136simulacao-casa-zanotto@pix5204000053039865802BR5911VilaZanotto6011PIRENOPOLIS62070503***6304SIMU";
+  "00020126580014br.gov.bcb.pix0136simulacao-villa-zanotto@pix5204000053039865802BR5912VillaZanotto6011PIRENOPOLIS62070503***6304SIMU";
 const simPix = new Map(); // tid -> { amountCents, reference } (PIX simulado)
 
 /* ===================== OAuth 2.0 (client_credentials) =====================
@@ -105,13 +106,15 @@ export const authorize = async ({ amountCents, reference, installments = 1, card
     kind: "credit",
     reference,
     amount: amountCents,
-    installments,
-    cardHolderName: card.holderName,
+    cardholderName: card.holderName,
     cardNumber: card.number,
     expirationMonth: card.expirationMonth,
     expirationYear: card.expirationYear,
     securityCode: card.securityCode
   };
+  // Na API e.Rede, ausência do campo significa à vista; quando presente,
+  // installments só aceita valores de 2 a 12.
+  if (installments >= 2) requestBody.installments = installments;
   // Só envia softDescriptor se habilitado (senão a Rede recusa com returnCode 63).
   if (config.rede.sendSoftDescriptor && config.rede.softDescriptor) {
     requestBody.softDescriptor = config.rede.softDescriptor;
