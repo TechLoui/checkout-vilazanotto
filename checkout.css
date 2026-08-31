@@ -4474,3 +4474,186 @@ legend,
     height: 118px;
   }
 }
+
+/* ==================================================================
+   Acomodações em LISTA no mobile/tablet (<= 1040px)
+   ------------------------------------------------------------------
+   Antes: carrossel horizontal com scroll-snap — um quarto por vez,
+   exigindo swipe pra descobrir que havia outros. E o card mantinha o
+   grid de 2 colunas (minmax(260px, .88fr) + minmax(0, 1fr)) dentro de
+   um item de largura 100%, espremendo a galeria até a foto virar uma
+   faixa cinza (as regras de posicionamento/opacidade da .rgal-stack
+   são globais, então não era falta de estilo — era falta de espaço).
+
+   Agora: lista vertical, um card por linha, foto no topo em largura
+   total — mesmo formato do site da Casa Zanotto.
+
+   Este bloco fica no FIM do arquivo de propósito: sobrepõe por ordem
+   de origem as regras de carrossel das linhas ~945, ~3092 e ~4172.
+   ================================================================== */
+@media (max-width: 1040px) {
+  .room-list {
+    display: grid;
+    grid-auto-flow: row;
+    gap: 14px;
+    overflow-x: visible;
+    scroll-snap-type: none;
+    margin-inline: 0;
+    scroll-padding-inline: 0;
+  }
+
+  .room-list .room-option,
+  body.embed .room-list .room-option {
+    flex: 0 1 auto;
+    flex-basis: auto;
+    width: 100%;
+    max-width: none;
+    scroll-snap-align: none;
+    grid-template-columns: 1fr;
+  }
+
+  /* min-height impede o colapso quando o aspect-ratio não tem largura
+     definida pra resolver (caso do embed estreito). */
+  .room-list .room-gallery,
+  body.embed .room-list .room-gallery {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    min-height: 170px;
+  }
+
+  /* A navegação por setas/bolinhas perde a função numa lista. */
+  .room-carousel-nav {
+    display: none;
+  }
+}
+
+/* ==================================================================
+   Barra do carrinho de acomodações (seleção múltipla)
+   Fica no rodapé da etapa 2 e só aparece com pelo menos um quarto
+   marcado — é ela que avança pra etapa 3, já que o clique no card
+   agora só marca/desmarca em vez de seguir direto.
+   ================================================================== */
+.room-cart {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--orange);
+  border-radius: var(--radius-sm);
+  background: var(--surface, #fff);
+  box-shadow: var(--shadow-orange);
+}
+
+.room-cart.is-hidden { display: none; }
+
+.room-cart-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.room-cart-info span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.room-cart-info strong {
+  font-size: 1.24rem;
+  line-height: 1.1;
+}
+
+.room-cart [data-rooms-continue] {
+  flex: 0 0 auto;
+}
+
+.room-cart [data-rooms-continue]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Estado marcado do botão dentro do card: inverte o primário (âmbar sobre
+   fundo escuro) em vez de introduzir um verde fora da paleta. */
+.room-select.is-selected {
+  background: var(--forest);
+  border-color: var(--forest);
+  color: var(--orange);
+}
+
+@media (max-width: 480px) {
+  .room-cart {
+    gap: 10px;
+  }
+
+  .room-cart [data-rooms-continue] {
+    width: 100%;
+  }
+}
+
+/* ==================================================================
+   Logo no topo do checkout embutido (mobile)
+   ------------------------------------------------------------------
+   No iframe o cabeçalho inteiro é ocultado (body.embed .checkout-header,
+   L1841) e o logo solto também (L2250 e L3927), o que deixava uma faixa
+   vazia acima da trilha de etapas. Aqui ele volta, centralizado.
+
+   pointer-events: none porque dentro do embed o link do logo aponta pra
+   index.html#topo — a mesma página que já está em volta do iframe. Como
+   navegação ele não leva a nada e ainda arrisca tirar o hóspede do
+   checkout num toque acidental; como marca, cumpre a função.
+   ================================================================== */
+@media (max-width: 760px) {
+  body.embed .checkout-logo {
+    display: block;
+    width: min(150px, 42vw);
+    margin: 2px auto 10px;
+    pointer-events: none;
+  }
+
+  body.embed .checkout-logo img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+}
+
+/* ==================================================================
+   Tipo de documento em cards (CPF / Passaporte)
+   Reaproveita o visual de .pay-opt usado na escolha da forma de
+   pagamento; aqui só o container e um ajuste de densidade, já que
+   o rótulo é curto e não tem linha de apoio.
+   ================================================================== */
+.doc-choice {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+@media (min-width: 560px) {
+  .doc-choice { grid-template-columns: 1fr 1fr; }
+}
+
+.doc-opt {
+  padding: 13px 16px;
+}
+
+/* Campo do documento antes de escolher o tipo: bloqueado de propósito,
+   não quebrado — cursor de "indisponível" e placeholder ainda legível. */
+#g-doc:disabled {
+  cursor: not-allowed;
+  background: rgba(98, 62, 42, 0.05);
+}
+
+#g-doc:disabled::placeholder {
+  color: var(--muted);
+  opacity: 0.85;
+}

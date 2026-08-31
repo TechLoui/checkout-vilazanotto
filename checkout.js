@@ -37,8 +37,8 @@ const loadPublicConfig = async () => {
       INSTALLMENTS_MAX = max;
       const installmentLabel = $("[data-card-installments]");
       if (installmentLabel) installmentLabel.textContent = max === 1 ? "Pagamento à vista" : `Em até ${max}x sem juros`;
-      if (state.selection) {
-        buildInstallments(state.selection.price);
+      if (cartCount()) {
+        buildInstallments(cartTotal());
         if (selectedInstallments <= max) $("#c-inst").value = String(selectedInstallments);
       }
     }
@@ -75,7 +75,27 @@ const decodeRoomData = (value) => JSON.parse(decodeURIComponent(value));
 
 const state = {
   search: null, // { arrival_date, departure_date, adults, kids, ages }
-  selection: null // { roomId, rateplanId, room_name, price }
+  selectedRooms: [] // [{ roomId, rateplanId, room_name, price, images }]
+};
+
+/* ---------- carrinho de acomodações (seleção múltipla) ----------
+   A identidade de um item é roomId + rateplanId, e a seleção é um toggle —
+   nunca uma quantidade. Isso impede escolher duas vezes o MESMO tipo, que a
+   API do Artax não suporta (room_units é indexado por room_type_id, então
+   cada tipo só cabe uma vez por reserva). Mesmo desenho do site da Casa. */
+const sameRoom = (a, b) =>
+  String(a.roomId) === String(b.roomId) && String(a.rateplanId) === String(b.rateplanId);
+const isRoomSelected = (opt) => state.selectedRooms.some((r) => sameRoom(r, opt));
+const cartCount = () => state.selectedRooms.length;
+const cartTotal = () => state.selectedRooms.reduce((sum, r) => sum + Number(r.price || 0), 0);
+const cartLabel = () => {
+  if (!cartCount()) return "Sua reserva";
+  if (cartCount() === 1) return state.selectedRooms[0].room_name;
+  return `${cartCount()} acomodações`;
+};
+const cartImage = () => {
+  const first = state.selectedRooms[0];
+  return first?.images?.[0] || first?.image || LOGO_IMAGE;
 };
 
 const refreshIcons = () => window.lucide && window.lucide.createIcons();
@@ -202,9 +222,9 @@ const updateReview = () => {
   setT("[data-pr-out]", fmtDate(s.departure_date));
   setT("[data-pr-nights]", String(nightsBetween(s.arrival_date, s.departure_date)));
   setT("[data-pr-guests]", `${s.adults} adulto(s)${s.kids ? ` · ${s.kids} criança(s)` : ""}`);
-  if (state.selection) {
-    setT("[data-pr-room]", state.selection.room_name);
-    setT("[data-pr-total]", brl(state.selection.price));
+  if (cartCount()) {
+    setT("[data-pr-room]", cartLabel());
+    setT("[data-pr-total]", brl(cartTotal()));
   }
 };
 
@@ -236,12 +256,12 @@ const updateSummary = () => {
   $("#sum-nights").textContent = nightsBetween(s.arrival_date, s.departure_date);
   $("#sum-guests").textContent =
     `${s.adults} adulto(s)${s.kids ? ` · ${s.kids} criança(s)` : ""}`;
-  if (state.selection) {
-    $("#sum-room").textContent = state.selection.room_name;
-    $("#sum-total").textContent = brl(state.selection.price);
+  if (cartCount()) {
+    $("#sum-room").textContent = cartLabel();
+    $("#sum-total").textContent = brl(cartTotal());
     const img = $("#sum-image");
-    if (img) img.alt = state.selection.room_name || "Acomodação selecionada";
-    setSummaryMedia(state.selection.images?.[0] || state.selection.image || LOGO_IMAGE, false);
+    if (img) img.alt = cartLabel() || "Acomodação selecionada";
+    setSummaryMedia(cartImage(), false);
   } else {
     $("#sum-room").textContent = "Sua reserva";
     $("#sum-total").textContent = "—";
@@ -358,7 +378,8 @@ const runAvailability = async (search) => {
 };
 
 const fetchAvailability = async (event) => {
-  event.preventDefault();
+  // Também é chamada sem evento, pelo deep-link (ver DOMContentLoaded).
+  event?.preventDefault();
   clearNotice();
   const btn = $("#search-btn");
   const ages = $$("#ages-inputs [data-age]").map((i) => Number(i.value));
@@ -378,7 +399,8 @@ const fetchAvailability = async (event) => {
   btn.innerHTML = '<span class="spinner"></span> Buscando...';
   try {
     const count = await runAvailability(search);
-    state.selection = null;
+    state.selectedRooms = [];
+    updateRoomCart();
     updateSummary();
     if (!count) {
       persistState();
@@ -538,14 +560,8 @@ const renderRooms = (rooms) => {
   }
   container.innerHTML = list
     .map((opt, i) => {
-      const cap = opt.capacity
-        ? `Até ${opt.capacity.adults} adulto(s)${opt.capacity.kids ? ` + ${opt.capacity.kids} criança(s)` : ""}`
-        : "";
       const images = opt.images?.length ? opt.images : [opt.image].filter(Boolean);
       const variant = opt.variant ? `<span class="room-variant">${escapeHTML(opt.variant)}</span>` : "";
-      const capacity = cap
-        ? `<span><i data-lucide="users" aria-hidden="true"></i>${escapeHTML(cap)}</span>`
-        : "";
       const galleryStack = images.length
         ? images
             .map((src, gi) => `<img src="${escapeHTML(src)}" alt="${escapeHTML(opt.room_name)} — foto ${gi + 1}" class="${gi === 0 ? "is-active" : ""}" loading="${gi === 0 ? "eager" : "lazy"}" decoding="async" draggable="false" aria-hidden="${gi === 0 ? "false" : "true"}">`)
@@ -570,7 +586,6 @@ const renderRooms = (rooms) => {
           <span class="room-availability"><i data-lucide="circle-check" aria-hidden="true"></i> Disponível para suas datas</span>
           <h3 id="room-title-${i}">${escapeHTML(opt.room_name)}${variant}</h3>
           <div class="room-meta">
-            ${capacity}
             <span><i data-lucide="image" aria-hidden="true"></i>${images.length} ${images.length === 1 ? "foto" : "fotos"}</span>
           </div>
         </div>
@@ -581,9 +596,9 @@ const renderRooms = (rooms) => {
             <strong>${brl(opt.price)}</strong>
             <small>total · ${nights} noite(s)</small>
           </div>
-          <button class="btn btn-primary room-select" type="button" aria-label="Selecionar ${escapeHTML(opt.room_name)} por ${escapeHTML(brl(opt.price))}">
-            Selecionar
-            <i data-lucide="arrow-right" aria-hidden="true"></i>
+          <button class="btn btn-primary room-select${isRoomSelected(opt) ? " is-selected" : ""}" type="button" aria-pressed="${isRoomSelected(opt)}" aria-label="${isRoomSelected(opt) ? "Remover" : "Selecionar"} ${escapeHTML(opt.room_name)} por ${escapeHTML(brl(opt.price))}">
+            <span data-room-select-label>${isRoomSelected(opt) ? "Selecionado" : "Selecionar"}</span>
+            <i data-lucide="check" aria-hidden="true"></i>
           </button>
         </div>
       </article>`;
@@ -592,6 +607,7 @@ const renderRooms = (rooms) => {
   refreshIcons();
   setupRoomCarousel();
   setupRoomGalleries();
+  updateRoomCart();
 };
 
 /* Galeria de fotos dentro de cada card de quarto (setas + contador, sem swipe
@@ -772,11 +788,64 @@ const buildInstallments = (price) => {
   }
 };
 
-const selectRoom = (opt) => {
-  state.selection = opt;
+/* Antes: clicar num card selecionava e já pulava pra etapa 3. Com seleção
+   múltipla o clique só marca/desmarca — quem avança é o botão "Continuar" da
+   barra do carrinho (ver confirmRoomSelection). */
+const toggleRoomSelection = (opt) => {
+  const idx = state.selectedRooms.findIndex((r) => sameRoom(r, opt));
+  if (idx >= 0) state.selectedRooms.splice(idx, 1);
+  else state.selectedRooms.push(opt);
+  syncRoomCards();
+  updateRoomCart();
   updateSummary();
   updateReview();
-  buildInstallments(opt.price);
+  persistState();
+};
+
+/* Reflete o carrinho nos cards já renderizados, sem reconstruir a lista — assim
+   a galeria de fotos de cada card não perde o slide/scroll em que estava. */
+const syncRoomCards = () => {
+  $$("#room-list [data-room]").forEach((card) => {
+    let opt;
+    try { opt = decodeRoomData(card.dataset.room); } catch (_) { return; }
+    const on = isRoomSelected(opt);
+    card.classList.toggle("is-selected", on);
+    const btn = $(".room-select", card);
+    if (!btn) return;
+    btn.classList.toggle("is-selected", on);
+    const text = $("[data-room-select-label]", btn);
+    if (text) text.textContent = on ? "Selecionado" : "Selecionar";
+    btn.setAttribute("aria-pressed", String(on));
+    btn.setAttribute(
+      "aria-label",
+      `${on ? "Remover" : "Selecionar"} ${opt.room_name} por ${brl(opt.price)}`
+    );
+  });
+  refreshIcons();
+};
+
+const updateRoomCart = () => {
+  const bar = $("[data-room-cart]");
+  if (!bar) return;
+  const count = cartCount();
+  bar.classList.toggle("is-hidden", count === 0);
+  const info = $("[data-room-cart-count]", bar);
+  if (info) {
+    info.textContent = count === 1
+      ? "1 acomodação selecionada"
+      : `${count} acomodações selecionadas`;
+  }
+  const total = $("[data-room-cart-total]", bar);
+  if (total) total.textContent = brl(cartTotal());
+  const btn = $("[data-rooms-continue]", bar);
+  if (btn) btn.disabled = count === 0;
+};
+
+const confirmRoomSelection = () => {
+  if (!cartCount()) {
+    return showNotice("Selecione ao menos uma acomodação para continuar.", "info");
+  }
+  buildInstallments(cartTotal());
   goToStep(3);
   goToPayStep("method"); // sempre começa pela escolha da forma de pagamento
   persistState();
@@ -825,14 +894,65 @@ const maskDocument = (el) => {
   el.value = el.value.replace(/\D/g, "").slice(0, 14);
 };
 
+// O placeholder repete o tipo escolhido, para o hóspede não perder de vista
+// qual documento está digitando enquanto olha só para o campo.
+const DOC_PLACEHOLDER = { cpf: "CPF · 000.000.000-00", passport: "Passaporte · AB123456" };
+const DOC_EMPTY_PLACEHOLDER = "Selecione o documento acima";
+
 const syncDocumentInputMode = () => {
   const input = $("#g-doc");
   if (!input) return;
-  const passport = $("#g-doctype")?.value === "passport";
+  const type = $("#g-doctype")?.value || "";
+  // Sem tipo escolhido o campo fica bloqueado — digitar antes de escolher só
+  // levaria a apagar tudo depois, já que os formatos são incompatíveis.
+  if (!type) {
+    input.value = "";
+    input.disabled = true;
+    input.placeholder = DOC_EMPTY_PLACEHOLDER;
+    return;
+  }
+  const passport = type === "passport";
+  input.disabled = false;
   input.inputMode = passport ? "text" : "numeric";
   input.autocapitalize = passport ? "characters" : "off";
-  input.placeholder = passport ? "Ex.: AB123456" : "";
+  input.placeholder = DOC_PLACEHOLDER[type] || "";
   maskDocument(input);
+};
+
+/* Marca o card do tipo escolhido e reaplica a máscara. O <input> oculto
+   #g-doctype segue sendo a fonte da verdade — todo o resto do código (payload,
+   persistência, restauração) continua lendo dele, sem saber dos cards. */
+const setDocType = (type) => {
+  const hidden = $("#g-doctype");
+  if (!hidden) return;
+  const changed = hidden.value !== type;
+  hidden.value = type;
+  $$("[data-doctype]").forEach((card) => {
+    const on = card.dataset.doctype === type;
+    card.classList.toggle("is-active", on);
+    card.setAttribute("aria-checked", String(on));
+  });
+  // Trocar de tipo invalida o que já estava digitado (formatos incompatíveis).
+  if (changed) {
+    const input = $("#g-doc");
+    if (input) input.value = "";
+  }
+  syncDocumentInputMode();
+  persistState();
+};
+
+/* CPF: 11 dígitos + dígitos verificadores. Evita que um número digitado errado
+   só apareça como problema lá na frente, no PMS. */
+const cpfValid = (raw) => {
+  const d = String(raw).replace(/\D/g, "");
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const check = (len) => {
+    let sum = 0;
+    for (let i = 0; i < len; i += 1) sum += Number(d[i]) * (len + 1 - i);
+    const mod = (sum * 10) % 11;
+    return (mod === 10 ? 0 : mod) === Number(d[len]);
+  };
+  return check(9) && check(10);
 };
 
 /* ---------- etapa 3: pagamento (sub-etapas: forma -> dados -> pagar) ---------- */
@@ -849,7 +969,6 @@ const guardActivePix = () => {
 
 const PAYSTEPS = ["method", "guest", "pay"];
 let payStep = "method";
-let guestStep = "name";
 
 const payStepTitle = (name) =>
   name === "guest" ? "Dados do hóspede"
@@ -877,7 +996,6 @@ const goToPayStep = (name) => {
         ? (payMethod === "pix" ? "Finalize com PIX." : "Informe os dados do cartão.")
         : "Escolha PIX ou cartão.";
   }
-  if (name === "guest") goToGuestStep("name"); // dados em 3 mini-etapas
   if (name === "pay") setPayMethod(payMethod); // garante painel/campos corretos ao chegar
   else ["#c-number", "#c-name", "#c-exp", "#c-cvv", "#c-inst"].forEach((sel) => {
     const field = $(sel);
@@ -888,7 +1006,7 @@ const goToPayStep = (name) => {
   persistState();
   if (isEmbeddedCheckout()) {
     const topic = name === "guest"
-      ? `payment:guest:${guestStep}`
+      ? "payment:guest"
       : name === "pay"
         ? `payment:pay:${payMethod}`
         : "payment:method";
@@ -899,18 +1017,6 @@ const goToPayStep = (name) => {
 };
 
 /* Dados do hóspede em 3 mini-etapas: nome -> contato -> documento */
-const goToGuestStep = (name) => {
-  guestStep = name;
-  $$("[data-gueststep]").forEach((g) => g.classList.toggle("is-hidden", g.dataset.gueststep !== name));
-  const t = $("[data-paystep-title]");
-  const intro = $("[data-paystep-intro]");
-  if (t) t.textContent = name === "contact" ? "Telefone e e-mail" : name === "doc" ? "Documento" : "Seu nome";
-  if (intro) intro.textContent = name === "contact" ? "Como podemos falar com você?" : name === "doc" ? "Preenchimento opcional." : "Informe o hóspede principal.";
-  refreshIcons();
-  focusHeading(t);
-  notifyEmbedView(3, `payment:guest:${name}`);
-};
-
 const setPayMethod = (method) => {
   if (method !== "pix" && guardActivePix()) return;
   payMethod = method;
@@ -972,8 +1078,7 @@ const baseReservationPayload = () => ({
   adults: state.search.adults,
   kids: state.search.kids,
   ages: state.search.ages,
-  room_id: state.selection.roomId,
-  rateplan_id: state.selection.rateplanId,
+  rooms: state.selectedRooms.map((r) => ({ room_id: r.roomId, rateplan_id: r.rateplanId })),
   ask_si: getAskSi() || undefined,
   guest: {
     first_name: $("#g-first").value.trim(),
@@ -989,6 +1094,17 @@ const baseReservationPayload = () => ({
 const guestValid = () => {
   if (!$("#g-first").value.trim()) return invalidateField($("#g-first"), "Informe o nome do hóspede.");
   if ($("#g-phone").value.replace(/\D/g, "").length < 10) return invalidateField($("#g-phone"), "Informe um telefone válido com DDD.");
+  // Documento passou a ser obrigatório.
+  const docType = $("#g-doctype")?.value || "";
+  const docValue = ($("#g-doc")?.value || "").trim();
+  if (!docType) return invalidateField($("#g-doc"), "Escolha o tipo de documento: CPF ou Passaporte.");
+  if (!docValue) return invalidateField($("#g-doc"), "Informe o número do documento.");
+  if (docType === "cpf" && !cpfValid(docValue)) {
+    return invalidateField($("#g-doc"), "CPF inválido. Confira os números.");
+  }
+  if (docType === "passport" && docValue.replace(/[^A-Za-z0-9]/g, "").length < 6) {
+    return invalidateField($("#g-doc"), "Passaporte inválido. Informe ao menos 6 caracteres.");
+  }
   return true;
 };
 
@@ -1043,7 +1159,7 @@ const validatedCard = () => {
 const submitCheckout = (event) => {
   event.preventDefault();
   clearNotice();
-  if (!state.selection || !state.search) return goToStep(1);
+  if (!cartCount() || !state.search) return goToStep(1);
   // Enter/submit avança as sub-etapas; só paga na última.
   if (payStep === "method") return goToPayStep("guest");
   if (payStep === "guest") { if (guestValid()) goToPayStep("pay"); return; }
@@ -1233,7 +1349,7 @@ const renderSuccess = (data) => {
     <div class="summary-row"><span>Check-in</span><span>${fmtDate(state.search.arrival_date)}</span></div>
     <div class="summary-row"><span>Check-out</span><span>${fmtDate(state.search.departure_date)}</span></div>
     <div class="summary-row"><span>Pagamento</span><span>${methodLabel}</span></div>
-    <div class="summary-total"><span>Pago</span><strong>${brl(p.amount || state.selection.price)}</strong></div>`;
+    <div class="summary-total"><span>Pago</span><strong>${brl(p.amount || cartTotal())}</strong></div>`;
   goToStep(4);
   refreshIcons();
 };
@@ -1251,7 +1367,7 @@ function persistState() {
       payStep,
       payMethod,
       search: state.search,
-      selection: state.selection,
+      selectedRooms: state.selectedRooms,
       installments: Number($("#c-inst")?.value) || 1,
       guest: {
         first: $("#g-first")?.value || "",
@@ -1306,7 +1422,17 @@ const restoreGuest = (g) => {
   if (!g) return;
   const set = (sel, v) => { const el = $(sel); if (el) el.value = v || ""; };
   set("#g-first", g.first); set("#g-last", g.last); set("#g-phone", g.phone);
-  set("#g-email", g.email); set("#g-doctype", g.doctype); set("#g-doc", g.doc);
+  set("#g-email", g.email);
+  // Só CPF e Passaporte são oferecidos. Sessões antigas com "rg" (ou sem tipo)
+  // voltam sem escolha, com o campo bloqueado, em vez de assumir um tipo errado.
+  const savedType = g.doctype === "cpf" || g.doctype === "passport" ? g.doctype : "";
+  $$("[data-doctype]").forEach((card) => {
+    const on = savedType && card.dataset.doctype === savedType;
+    card.classList.toggle("is-active", Boolean(on));
+    card.setAttribute("aria-checked", String(Boolean(on)));
+  });
+  set("#g-doctype", savedType);
+  set("#g-doc", savedType ? g.doc : "");
   syncDocumentInputMode();
 };
 
@@ -1323,11 +1449,18 @@ const restoreState = async () => {
   updateSummary();
 
   // Uma tarifa salva nunca é reutilizada sem nova consulta de disponibilidade.
-  if (saved.selection) {
+  // Compatível com sessões gravadas antes da seleção múltipla, que salvavam um
+  // único objeto em `selection` em vez do array `selectedRooms`.
+  const savedRooms = Array.isArray(saved.selectedRooms)
+    ? saved.selectedRooms
+    : (saved.selection ? [saved.selection] : []);
+
+  if (savedRooms.length) {
     try {
       const count = await runAvailability(saved.search);
       if (!count) {
-        state.selection = null;
+        state.selectedRooms = [];
+        updateRoomCart();
         updateSummary();
         persistState();
         goToStep(1);
@@ -1335,30 +1468,44 @@ const restoreState = async () => {
         return true;
       }
     } catch (_) {
-      state.selection = null;
+      state.selectedRooms = [];
+      updateRoomCart();
       updateSummary();
       goToStep(1);
       showNotice("Não foi possível revalidar a tarifa salva. Faça uma nova busca para continuar.", "info");
       return true;
     }
 
-    const freshSelection = $$(".room-option")
-      .map((card) => decodeRoomData(card.dataset.room))
-      .find((room) => String(room.roomId) === String(saved.selection.roomId)
-        && String(room.rateplanId) === String(saved.selection.rateplanId));
-    if (!freshSelection) {
-      state.selection = null;
+    // Revalida item a item: só sobrevive o que ainda existe na disponibilidade
+    // recém-consultada. Se algum caiu, o hóspede volta pra etapa 2 e refaz a
+    // escolha — nunca seguimos com um carrinho parcialmente inválido.
+    const fresh = $$(".room-option").map((card) => decodeRoomData(card.dataset.room));
+    const revalidated = savedRooms
+      .map((sel) => fresh.find((room) => sameRoom(room, sel)))
+      .filter(Boolean);
+
+    if (revalidated.length !== savedRooms.length) {
+      state.selectedRooms = revalidated;
+      syncRoomCards();
+      updateRoomCart();
       updateSummary();
       persistState();
       goToStep(2);
-      showNotice("A tarifa escolhida mudou. Selecione novamente uma acomodação para continuar.", "info");
+      showNotice(
+        revalidated.length
+          ? "Parte das acomodações escolhidas mudou de tarifa ou não está mais disponível. Confira a seleção para continuar."
+          : "A tarifa escolhida mudou. Selecione novamente uma acomodação para continuar.",
+        "info"
+      );
       return true;
     }
 
-    state.selection = freshSelection;
+    state.selectedRooms = revalidated;
+    syncRoomCards();
+    updateRoomCart();
     updateSummary();
     updateReview();
-    buildInstallments(freshSelection.price);
+    buildInstallments(cartTotal());
     if (saved.installments && saved.installments <= INSTALLMENTS_MAX) {
       $("#c-inst").value = String(saved.installments);
     }
@@ -1597,13 +1744,21 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#kids").addEventListener("change", buildAgesInputs);
   $("#search-form").addEventListener("submit", fetchAvailability);
 
+  // Deep-link (Asksuite e afins): com as duas datas na query, já consulta a
+  // disponibilidade em vez de parar no formulário preenchido — mesmo
+  // comportamento do site da Casa, onde o prefill dispara a busca. Sem as duas
+  // datas não faz nada: o hóspede continua no formulário, como antes.
+  if (hasExplicitSearchQuery() && $("#arrival").value && $("#departure").value) {
+    fetchAvailability();
+  }
+
   $("#room-list").addEventListener("click", (e) => {
     const card = e.target.closest("[data-room]");
     if (!card) return;
-    $$(".room-option").forEach((c) => c.classList.remove("is-selected"));
-    card.classList.add("is-selected");
-    selectRoom(decodeRoomData(card.dataset.room));
+    toggleRoomSelection(decodeRoomData(card.dataset.room));
   });
+
+  $("[data-rooms-continue]")?.addEventListener("click", confirmRoomSelection);
 
   $("#back-to-search").addEventListener("click", () => { goToStep(1); goToSearchStep("dates"); });
   $("#back-to-rooms").addEventListener("click", () => { if (!guardActivePix()) goToStep(2); });
@@ -1627,7 +1782,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // Máscaras dos dados do hóspede
   $("#g-phone").addEventListener("input", (e) => maskPhone(e.target));
   $("#g-doc").addEventListener("input", (e) => maskDocument(e.target));
-  $("#g-doctype").addEventListener("change", syncDocumentInputMode);
+  $$("[data-doctype]").forEach((card) => {
+    card.addEventListener("click", () => setDocType(card.dataset.doctype));
+  });
+  syncDocumentInputMode(); // aplica placeholder/inputmode do tipo inicial
   syncDocumentInputMode();
   $$("input, select").forEach((field) => {
     const clearInvalid = () => field.removeAttribute("aria-invalid");
@@ -1656,16 +1814,6 @@ document.addEventListener("DOMContentLoaded", () => {
     goToPayStep(target);
   }));
   $$("[data-payback]").forEach((b) => b.addEventListener("click", () => goToPayStep(b.dataset.payback)));
-
-  // Mini-etapas dos dados: nome -> contato -> documento
-  $$("[data-guestnext]").forEach((b) => b.addEventListener("click", () => {
-    const target = b.dataset.guestnext;
-    if (target === "contact" && !$("#g-first").value.trim()) return invalidateField($("#g-first"), "Informe o nome do hóspede.");
-    if (target === "doc" && $("#g-phone").value.replace(/\D/g, "").length < 10) return invalidateField($("#g-phone"), "Informe um telefone válido com DDD.");
-    clearNotice();
-    goToGuestStep(target);
-  }));
-  $$("[data-guestback]").forEach((b) => b.addEventListener("click", () => goToGuestStep(b.dataset.guestback)));
 
   // Copiar o código PIX (copia e cola)
   $("[data-pix-copy]")?.addEventListener("click", async () => {

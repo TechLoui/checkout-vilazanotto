@@ -495,6 +495,16 @@ h3 {
   line-height: 1.35;
 }
 
+/* Destaque textual (sem valor numerico) nos fatos do hero. */
+.hero-facts li.hero-fact-text {
+  grid-template-columns: 1fr;
+  gap: 3px;
+}
+
+.hero-facts li.hero-fact-text strong {
+  font-size: 1.3rem;
+}
+
 .hero-scroll {
   position: absolute;
   bottom: 28px;

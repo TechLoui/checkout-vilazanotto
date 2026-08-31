@@ -20,6 +20,9 @@ pix/
 .netlify/
 dist/
 
+# Cópia de staging pra upload manual na Hostinger (não é fonte, não versiona)
+hostinger-upload/
+
 # Dev / lixo
 .playwright-cli/
 output/

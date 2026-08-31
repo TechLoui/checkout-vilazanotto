@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Lora:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="checkout.css?v=20260828-vila7">
+    <link rel="stylesheet" href="checkout.css?v=20260831-vila12">
     <!-- Backend de produção no Railway. Credenciais permanecem somente no servidor. -->
     <script>
       if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
@@ -18,7 +18,7 @@
       }
     </script>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-    <script src="checkout.js?v=20260828-vila8" defer></script>
+    <script src="checkout.js?v=20260831-vila14" defer></script>
   </head>
   <body data-step="1" data-topic="availability:dates">
     <a class="skip-link" href="#checkout-content">Ir para o conteúdo da reserva</a>
@@ -178,6 +178,16 @@
               <div class="rcn-dots" data-rn-dots></div>
               <button class="rcn-btn" type="button" data-rn-next aria-label="Próximo quarto"><i data-lucide="chevron-right" aria-hidden="true"></i></button>
             </div>
+            <div class="room-cart is-hidden" data-room-cart aria-live="polite">
+              <div class="room-cart-info">
+                <span data-room-cart-count>Nenhuma acomodação selecionada</span>
+                <strong data-room-cart-total>—</strong>
+              </div>
+              <button class="btn btn-primary" type="button" data-rooms-continue disabled>
+                Continuar
+                <i data-lucide="arrow-right" aria-hidden="true"></i>
+              </button>
+            </div>
           </section>
 
           <section class="panel is-hidden" data-view="3" aria-labelledby="step-3-title">
@@ -239,85 +249,74 @@
               </div>
 
               <!-- SUB-ETAPA 2: dados do hóspede (3 mini-etapas) -->
+              <!-- Nome, contato e documento numa tela só. Antes eram três
+                   mini-etapas (data-gueststep name/contact/doc), o que dava
+                   uma tela inteira para dois campos. -->
               <div class="paystep is-hidden" data-paystep="guest">
-                <!-- 2a: nome -->
-                <div class="gueststep" data-gueststep="name">
-                  <fieldset class="form-block">
-                    <legend>Seu nome</legend>
-                    <div class="grid">
-                      <div class="field col-2">
-                        <label for="g-first">Nome*</label>
-                        <input id="g-first" name="first_name" autocomplete="given-name" required>
-                      </div>
-                      <div class="field col-2">
-                        <label for="g-last">Sobrenome</label>
-                        <input id="g-last" name="last_name" autocomplete="family-name">
-                      </div>
+                <fieldset class="form-block">
+                  <legend>Seu nome</legend>
+                  <div class="grid">
+                    <div class="field col-2">
+                      <label for="g-first">Nome*</label>
+                      <input id="g-first" name="first_name" autocomplete="given-name" required>
                     </div>
-                  </fieldset>
-                  <div class="form-actions two-actions">
-                    <button class="btn btn-ghost" type="button" data-payback="method">
-                      <i data-lucide="arrow-left" aria-hidden="true"></i> Voltar
-                    </button>
-                    <button class="btn btn-primary" type="button" data-guestnext="contact">
-                      Continuar <i data-lucide="arrow-right" aria-hidden="true"></i>
-                    </button>
+                    <div class="field col-2">
+                      <label for="g-last">Sobrenome</label>
+                      <input id="g-last" name="last_name" autocomplete="family-name">
+                    </div>
                   </div>
-                </div>
+                </fieldset>
 
-                <!-- 2b: contato -->
-                <div class="gueststep is-hidden" data-gueststep="contact">
-                  <fieldset class="form-block">
-                    <legend>Contato</legend>
-                    <div class="grid">
-                      <div class="field col-2">
-                        <label for="g-phone">Telefone (com DDD)*</label>
-                        <input id="g-phone" name="phone" inputmode="tel" autocomplete="tel" placeholder="(64) 99999-9999" required>
-                      </div>
-                      <div class="field col-2">
-                        <label for="g-email">E-mail</label>
-                        <input id="g-email" name="email" type="email" autocomplete="email">
-                      </div>
+                <fieldset class="form-block">
+                  <legend>Contato</legend>
+                  <div class="grid">
+                    <div class="field col-2">
+                      <label for="g-phone">Telefone (com DDD)*</label>
+                      <input id="g-phone" name="phone" inputmode="tel" autocomplete="tel" placeholder="(64) 99999-9999" required>
                     </div>
-                  </fieldset>
-                  <div class="form-actions two-actions">
-                    <button class="btn btn-ghost" type="button" data-guestback="name">
-                      <i data-lucide="arrow-left" aria-hidden="true"></i> Voltar
-                    </button>
-                    <button class="btn btn-primary" type="button" data-guestnext="doc">
-                      Continuar <i data-lucide="arrow-right" aria-hidden="true"></i>
-                    </button>
+                    <div class="field col-2">
+                      <label for="g-email">E-mail</label>
+                      <input id="g-email" name="email" type="email" autocomplete="email">
+                    </div>
                   </div>
-                </div>
+                </fieldset>
 
-                <!-- 2c: documento -->
-                <div class="gueststep is-hidden" data-gueststep="doc">
-                  <fieldset class="form-block">
-                    <legend>Documento <span class="hint">(opcional)</span></legend>
-                    <div class="grid">
-                      <div class="field col-2">
-                        <label for="g-doctype">Tipo de documento</label>
-                        <select id="g-doctype" name="document_type">
-                          <option value="">-</option>
-                          <option value="cpf">CPF</option>
-                          <option value="rg">RG</option>
-                          <option value="passport">Passaporte</option>
-                        </select>
-                      </div>
-                      <div class="field col-2">
-                        <label for="g-doc">Documento</label>
-                        <input id="g-doc" name="document" inputmode="numeric">
-                      </div>
-                    </div>
-                  </fieldset>
-                  <div class="form-actions two-actions">
-                    <button class="btn btn-ghost" type="button" data-guestback="contact">
-                      <i data-lucide="arrow-left" aria-hidden="true"></i> Voltar
+                <fieldset class="form-block">
+                  <legend>Documento</legend>
+                  <!-- O tipo é escolhido por card; o valor continua num input
+                       oculto com o mesmo id (#g-doctype) que o restante do
+                       código já lê, grava e restaura. -->
+                  <div class="doc-choice" role="radiogroup" aria-label="Tipo de documento">
+                    <button type="button" class="pay-opt doc-opt" data-doctype="cpf" role="radio" aria-checked="false">
+                      <span class="pay-opt-ic"><i data-lucide="id-card" aria-hidden="true"></i></span>
+                      <span class="pay-opt-txt"><strong>CPF</strong></span>
+                      <span class="pay-opt-check"><i data-lucide="check" aria-hidden="true"></i></span>
                     </button>
-                    <button class="btn btn-primary" type="button" data-paynext="pay">
-                      Continuar <i data-lucide="arrow-right" aria-hidden="true"></i>
+                    <button type="button" class="pay-opt doc-opt" data-doctype="passport" role="radio" aria-checked="false">
+                      <span class="pay-opt-ic"><i data-lucide="plane" aria-hidden="true"></i></span>
+                      <span class="pay-opt-txt"><strong>Passaporte</strong></span>
+                      <span class="pay-opt-check"><i data-lucide="check" aria-hidden="true"></i></span>
                     </button>
                   </div>
+                  <input type="hidden" id="g-doctype" name="document_type" value="">
+                  <div class="grid">
+                    <div class="field col-2">
+                      <label for="g-doc">Número do documento*</label>
+                      <!-- Começa desabilitado: só libera depois de escolher o
+                           tipo acima, e o placeholder diz qual está escolhido. -->
+                      <input id="g-doc" name="document" inputmode="numeric" required
+                             disabled placeholder="Selecione o documento acima">
+                    </div>
+                  </div>
+                </fieldset>
+
+                <div class="form-actions two-actions">
+                  <button class="btn btn-ghost" type="button" data-payback="method">
+                    <i data-lucide="arrow-left" aria-hidden="true"></i> Voltar
+                  </button>
+                  <button class="btn btn-primary" type="button" data-paynext="pay">
+                    Continuar <i data-lucide="arrow-right" aria-hidden="true"></i>
+                  </button>
                 </div>
               </div>
 
