@@ -501,6 +501,7 @@ const initReserveEmbed = () => {
 
   let lastStep = 1;
   let lastTopic = "";
+  const purchaseSent = new Set(); // reservas já contadas no Pixel nesta página
   let stateFrame = 0;
   let alignFrame = 0;
 
@@ -583,6 +584,21 @@ const initReserveEmbed = () => {
     } else if (data.cz === "step" && Number.isFinite(data.value)) {
       if (data.value !== lastStep && reserveIsNearViewport()) alignReserveFrame();
       lastStep = data.value;
+    } else if (data.cz === "purchase" && data.bookingId) {
+      // Compra concluída dentro do iframe do checkout. O Pixel vive aqui na
+      // home, então é daqui que o `Purchase` sai — assim a venda fica na mesma
+      // sessão da visita, e não numa sessão separada do iframe.
+      if (purchaseSent.has(data.bookingId)) return; // recarregar não conta de novo
+      purchaseSent.add(data.bookingId);
+      if (typeof window.fbq !== "function") return;
+      // `eventID` é o número da reserva: permite à Meta deduplicar com a
+      // Conversions API, caso ela seja ligada no futuro.
+      window.fbq("track", "Purchase", {
+        value: Number(data.value) || 0,
+        currency: "BRL",
+        content_type: "hotel",
+        contents: Array.isArray(data.contents) ? data.contents : []
+      }, { eventID: data.bookingId });
     }
   });
 };

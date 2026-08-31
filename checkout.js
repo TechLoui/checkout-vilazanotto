@@ -1322,9 +1322,29 @@ const pixExpired = () => {
   notifyEmbedView(3, "payment:pay:pix");
 };
 
+/* Avisa a home da compra concluída, para o Pixel da Meta disparar o `Purchase`.
+   O evento tem que sair da home, não daqui: o checkout roda dentro de um iframe,
+   e um pixel disparando lá dentro contaria como outra sessão, estragando a
+   atribuição. Reaproveita o mesmo canal já usado para altura e etapa. */
+const notifyEmbedPurchase = (data) => {
+  if (!isEmbeddedCheckout() || !data?.booking_id) return;
+  const rooms = (Array.isArray(data.rooms) ? data.rooms : [data.room]).filter(Boolean);
+  parent.postMessage({
+    cz: "purchase",
+    bookingId: String(data.booking_id),
+    value: Number(data.payment?.amount ?? cartTotal()) || 0,
+    contents: (rooms.length ? rooms : state.selectedRooms).map((r) => ({
+      id: String(r.id ?? r.roomId ?? ""),
+      quantity: 1,
+      item_price: Number(r.price ?? 0)
+    }))
+  }, embedTargetOrigin);
+};
+
 const renderSuccess = (data) => {
   stopPixPolling();
   currentPix = null;
+  notifyEmbedPurchase(data); // antes do clearState(), que zera o carrinho
   clearState();
   $("#booking-id").textContent = `Reserva nº ${data.booking_id}`;
 
