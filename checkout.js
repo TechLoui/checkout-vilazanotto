@@ -157,7 +157,7 @@ const goToStep = (step) => {
     const topics = {
       1: "availability:dates",
       2: "rooms",
-      3: "payment:method",
+      3: "payment:guest",
       4: "confirmation"
     };
     notifyEmbedView(step, topics[step] || `step:${step}`);
@@ -847,7 +847,7 @@ const confirmRoomSelection = () => {
   }
   buildInstallments(cartTotal());
   goToStep(3);
-  goToPayStep("method"); // sempre começa pela escolha da forma de pagamento
+  goToPayStep("guest"); // dados primeiro; forma de pagamento vai na tela final
   persistState();
 };
 
@@ -967,13 +967,13 @@ const guardActivePix = () => {
   return true;
 };
 
-const PAYSTEPS = ["method", "guest", "pay"];
-let payStep = "method";
+const PAYSTEPS = ["guest", "pay"];
+let payStep = "guest";
 
 const payStepTitle = (name) =>
   name === "guest" ? "Dados do hóspede"
     : name === "pay" ? (payMethod === "pix" ? "Pague com PIX" : "Dados do cartão")
-      : "Forma de pagamento";
+      : "Dados do hóspede";
 
 const goToPayStep = (name) => {
   if (name !== "pay" && guardActivePix()) return;
@@ -1009,7 +1009,7 @@ const goToPayStep = (name) => {
       ? "payment:guest"
       : name === "pay"
         ? `payment:pay:${payMethod}`
-        : "payment:method";
+        : "payment:guest";
     notifyEmbedView(3, topic);
   } else {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1020,7 +1020,7 @@ const goToPayStep = (name) => {
 const setPayMethod = (method) => {
   if (method !== "pix" && guardActivePix()) return;
   payMethod = method;
-  $$(".pay-opt").forEach((t) => {
+  $$("[data-pay-method]").forEach((t) => {
     const active = t.dataset.payMethod === method;
     t.classList.toggle("is-active", active);
     t.setAttribute("aria-pressed", String(active));
@@ -1161,7 +1161,6 @@ const submitCheckout = (event) => {
   clearNotice();
   if (!cartCount() || !state.search) return goToStep(1);
   // Enter/submit avança as sub-etapas; só paga na última.
-  if (payStep === "method") return goToPayStep("guest");
   if (payStep === "guest") { if (guestValid()) goToPayStep("pay"); return; }
   if (!guestValid()) return goToPayStep("guest");
   if (payMethod === "pix") submitPix();
@@ -1326,6 +1325,19 @@ const pixExpired = () => {
    O evento tem que sair da home, não daqui: o checkout roda dentro de um iframe,
    e um pixel disparando lá dentro contaria como outra sessão, estragando a
    atribuição. Reaproveita o mesmo canal já usado para altura e etapa. */
+/* Correspondência avançada da Meta: e-mail e telefone do hóspede. O Pixel faz
+   o hash SHA-256 no navegador antes de enviar — os valores em texto nunca saem
+   daqui. Só vão no momento da compra, e apenas os dois campos que a Meta usa
+   para casar a conversão. O telefone segue no padrão internacional (55 + DDD). */
+const advancedMatching = () => {
+  const out = {};
+  const email = ($("#g-email")?.value || "").trim().toLowerCase();
+  if (email.includes("@")) out.em = email;
+  const digits = ($("#g-phone")?.value || "").replace(/\D/g, "");
+  if (digits.length >= 10) out.ph = digits.startsWith("55") ? digits : `55${digits}`;
+  return out;
+};
+
 const notifyEmbedPurchase = (data) => {
   if (!isEmbeddedCheckout() || !data?.booking_id) return;
   const rooms = (Array.isArray(data.rooms) ? data.rooms : [data.room]).filter(Boolean);
@@ -1337,7 +1349,8 @@ const notifyEmbedPurchase = (data) => {
       id: String(r.id ?? r.roomId ?? ""),
       quantity: 1,
       item_price: Number(r.price ?? 0)
-    }))
+    })),
+    match: advancedMatching()
   }, embedTargetOrigin);
 };
 
@@ -1374,7 +1387,11 @@ const renderSuccess = (data) => {
   refreshIcons();
 };
 
-/* ---------- persistência (localStorage): retoma de onde parou ---------- */
+/* ---------- persistência (sessionStorage): retoma de onde parou ----------
+   sessionStorage e não localStorage de propósito: o estado morre quando a aba
+   fecha, então quem sai do site e volta depois começa do início. Antes, com
+   localStorage, a etapa ficava gravada por 2h mesmo fechando o navegador.
+   Recarregar a página sem fechar a aba continua preservando o progresso. */
 const STORAGE_KEY = "vz_checkout_v1";
 const STORAGE_TTL = 2 * 60 * 60 * 1000; // 2h
 
@@ -1399,16 +1416,21 @@ function persistState() {
       },
       pix: currentPix // dados do cartão NUNCA são salvos
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(snap));
-  } catch (_) { /* localStorage indisponível */ }
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snap));
+  } catch (_) { /* sessionStorage indisponível */ }
 }
 
 const loadState = () => {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch { return null; }
+  try { return JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "null"); } catch { return null; }
 };
 const clearState = () => {
-  try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+  try { sessionStorage.removeItem(STORAGE_KEY); } catch (_) {}
 };
+
+// Limpeza única: quem visitou o site antes desta mudança tem a chave gravada no
+// localStorage, que ninguém mais lê. Sem isso ela ficaria presa no navegador do
+// hóspede para sempre.
+try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
 
 const hasExplicitSearchQuery = () => {
   const params = new URLSearchParams(location.search);
@@ -1531,7 +1553,7 @@ const restoreState = async () => {
     }
     goToStep(3);
     setPayMethod(saved.payMethod || "pix");
-    goToPayStep(saved.payStep || "method");
+    goToPayStep(saved.payStep === "pay" ? "pay" : "guest");
     if (saved.pix && saved.pix.expiresAt > Date.now()) restorePix(saved.pix);
     return true;
   }
@@ -1822,7 +1844,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#checkout-form").addEventListener("submit", submitCheckout);
 
   // Sub-etapa 1: escolha da forma de pagamento (PIX / Cartão)
-  $$(".pay-opt").forEach((t) => t.addEventListener("click", () => setPayMethod(t.dataset.payMethod)));
+  $$("[data-pay-method]").forEach((t) => t.addEventListener("click", () => setPayMethod(t.dataset.payMethod)));
 
   // Retoma de onde o usuário parou (se houver); senão, começa no PIX.
   restoreState().then((restored) => { if (!restored) setPayMethod("pix"); });

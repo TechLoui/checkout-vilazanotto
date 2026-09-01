@@ -591,6 +591,13 @@ const initReserveEmbed = () => {
       if (purchaseSent.has(data.bookingId)) return; // recarregar não conta de novo
       purchaseSent.add(data.bookingId);
       if (typeof window.fbq !== "function") return;
+      // Correspondência avançada manual, pedida pelo Gerenciador de Anúncios.
+      // Só dá pra informar aqui: no <head> o hóspede ainda não preencheu nada,
+      // e os campos ficam dentro do iframe do checkout. Reinicializar o mesmo
+      // pixel com os dados atualiza a correspondência antes do evento sair;
+      // o próprio Pixel aplica SHA-256 antes de transmitir.
+      const match = data.match && typeof data.match === "object" ? data.match : null;
+      if (match && (match.em || match.ph)) window.fbq("init", "1672190470484649", match);
       // `eventID` é o número da reserva: permite à Meta deduplicar com a
       // Conversions API, caso ela seja ligada no futuro.
       window.fbq("track", "Purchase", {

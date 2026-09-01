@@ -4657,3 +4657,17 @@ legend,
   color: var(--muted);
   opacity: 0.85;
 }
+
+/* ==================================================================
+   Resumo da reserva também no desktop, dentro da etapa de pagamento
+   ------------------------------------------------------------------
+   Antes era um ou outro: no desktop só a barra lateral (.summary), e o
+   bloco inline (.pay-review) aparecia apenas abaixo de 1040px. Com isso
+   quem reservava no computador via o total longe do botao de pagar.
+   Agora o bloco fica logo acima de "Gerar PIX" / dados do cartao em
+   qualquer largura, com quarto, total, datas, noites e hospedes juntos.
+   ================================================================== */
+.pay-review {
+  display: block;
+  margin-bottom: 18px;
+}

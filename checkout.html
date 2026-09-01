@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Lora:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="checkout.css?v=20260831-vila12">
+    <link rel="stylesheet" href="checkout.css?v=20260901-vila13">
     <!-- Backend de produção no Railway. Credenciais permanecem somente no servidor. -->
     <script>
       if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
@@ -18,7 +18,7 @@
       }
     </script>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-    <script src="checkout.js?v=20260831-vila15" defer></script>
+    <script src="checkout.js?v=20260901-vila19" defer></script>
   </head>
   <body data-step="1" data-topic="availability:dates">
     <a class="skip-link" href="#checkout-content">Ir para o conteúdo da reserva</a>
@@ -193,14 +193,13 @@
           <section class="panel is-hidden" data-view="3" aria-labelledby="step-3-title">
             <div class="panel-heading">
               <span class="panel-kicker">Etapa 3 de 4</span>
-              <h2 id="step-3-title" data-paystep-title tabindex="-1">Forma de pagamento</h2>
-              <p class="panel-intro" data-paystep-intro>Escolha PIX ou cartão.</p>
+              <h2 id="step-3-title" data-paystep-title tabindex="-1">Dados do hóspede</h2>
+              <p class="panel-intro" data-paystep-intro>Preencha seus dados.</p>
             </div>
 
             <ol class="paysteps" aria-label="Sub-etapas do pagamento">
-              <li data-paystep-dot="method" class="is-active"><span class="ps-n">1</span> Forma</li>
-              <li data-paystep-dot="guest"><span class="ps-n">2</span> Dados</li>
-              <li data-paystep-dot="pay"><span class="ps-n">3</span> Pagamento</li>
+              <li data-paystep-dot="guest" class="is-active"><span class="ps-n">1</span> Dados</li>
+              <li data-paystep-dot="pay"><span class="ps-n">2</span> Pagamento</li>
             </ol>
 
             <div class="pay-review" aria-label="Revisão da reserva">
@@ -217,42 +216,11 @@
             </div>
 
             <form id="checkout-form" autocomplete="on">
-              <!-- SUB-ETAPA 1: forma de pagamento -->
-              <div class="paystep" data-paystep="method">
-                <div class="pay-choice">
-                  <button type="button" class="pay-opt is-active" data-pay-method="pix" aria-pressed="true">
-                    <span class="pay-opt-ic"><i data-lucide="qr-code" aria-hidden="true"></i></span>
-                    <span class="pay-opt-txt">
-                      <strong>PIX</strong>
-                      <small>Aprovação imediata</small>
-                    </span>
-                    <span class="pay-opt-check"><i data-lucide="check" aria-hidden="true"></i></span>
-                  </button>
-                  <button type="button" class="pay-opt" data-pay-method="card" aria-pressed="false">
-                    <span class="pay-opt-ic"><i data-lucide="credit-card" aria-hidden="true"></i></span>
-                    <span class="pay-opt-txt">
-                      <strong>Cartão de crédito</strong>
-                    </span>
-                    <span class="pay-opt-check"><i data-lucide="check" aria-hidden="true"></i></span>
-                  </button>
-                </div>
-                <div class="form-actions two-actions">
-                  <button class="btn btn-ghost" type="button" id="back-to-rooms">
-                    <i data-lucide="arrow-left" aria-hidden="true"></i>
-                    Voltar
-                  </button>
-                  <button class="btn btn-primary" type="button" data-paynext="guest">
-                    Continuar
-                    <i data-lucide="arrow-right" aria-hidden="true"></i>
-                  </button>
-                </div>
-              </div>
-
-              <!-- SUB-ETAPA 2: dados do hóspede (3 mini-etapas) -->
+              <!-- SUB-ETAPA 1: dados do hóspede -->
               <!-- Nome, contato e documento numa tela só. Antes eram três
                    mini-etapas (data-gueststep name/contact/doc), o que dava
                    uma tela inteira para dois campos. -->
-              <div class="paystep is-hidden" data-paystep="guest">
+              <div class="paystep" data-paystep="guest">
                 <fieldset class="form-block">
                   <legend>Seu nome</legend>
                   <div class="grid">
@@ -311,7 +279,7 @@
                 </fieldset>
 
                 <div class="form-actions two-actions">
-                  <button class="btn btn-ghost" type="button" data-payback="method">
+                  <button class="btn btn-ghost" type="button" id="back-to-rooms">
                     <i data-lucide="arrow-left" aria-hidden="true"></i> Voltar
                   </button>
                   <button class="btn btn-primary" type="button" data-paynext="pay">
@@ -322,6 +290,27 @@
 
               <!-- SUB-ETAPA 3: pagamento (PIX ou cartão) -->
               <div class="paystep is-hidden" data-paystep="pay">
+                <!-- A escolha da forma de pagamento vive aqui, junto do resumo
+                     e do botão de finalizar: o hóspede decide como pagar na
+                     mesma tela em que confere o valor e conclui. -->
+                <div class="pay-choice">
+                  <button type="button" class="pay-opt is-active" data-pay-method="pix" aria-pressed="true">
+                    <span class="pay-opt-ic"><i data-lucide="qr-code" aria-hidden="true"></i></span>
+                    <span class="pay-opt-txt">
+                      <strong>PIX</strong>
+                      <small>Aprovação imediata</small>
+                    </span>
+                    <span class="pay-opt-check"><i data-lucide="check" aria-hidden="true"></i></span>
+                  </button>
+                  <button type="button" class="pay-opt" data-pay-method="card" aria-pressed="false">
+                    <span class="pay-opt-ic"><i data-lucide="credit-card" aria-hidden="true"></i></span>
+                    <span class="pay-opt-txt">
+                      <strong>Cartão de crédito</strong>
+                    </span>
+                    <span class="pay-opt-check"><i data-lucide="check" aria-hidden="true"></i></span>
+                  </button>
+                </div>
+
                 <p class="notice info">
                   <i data-lucide="lock" aria-hidden="true"></i>
                   Pagamento criptografado. O cartão não fica salvo.
