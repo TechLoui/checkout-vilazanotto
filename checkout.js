@@ -136,6 +136,47 @@ const postEmbedHeight = () => {
   parent.postMessage({ cz: "height", value: height }, embedTargetOrigin);
 };
 
+/* Onde está o conteúdo que o hóspede precisa ver agora, medido a partir do topo
+   do documento do iframe. A home usa isso para enquadrar a área certa.
+
+   Sem isso ela só sabia alinhar pelo topo do iframe: ao avançar as sub-etapas
+   do cartão, a tela subia para o começo do checkout em vez de acompanhar os
+   campos que acabaram de aparecer. Procura o painel visível mais interno —
+   sub-etapa do cartão, depois sub-etapa do pagamento, depois da busca — e cai
+   no painel da etapa quando não há sub-etapa. */
+const embedAnchorTop = () => {
+  const panel = $$("[data-view]").find((el) => !el.classList.contains("is-hidden"));
+  if (!panel) return 0;
+  const inner = ["[data-card-step]", "[data-paystep]", "[data-searchstep]"]
+    .map((sel) => $$(sel, panel).find((el) => !el.hidden && !el.classList.contains("is-hidden")))
+    .find(Boolean);
+  const target = inner || panel;
+  // O iframe não rola por dentro (a home ajusta a altura para caber o
+  // conteúdo), então o rect já é a posição dentro do documento.
+  return Math.max(0, Math.round(target.getBoundingClientRect().top));
+};
+
+/* Traz um elemento para a vista. Dentro do iframe NÃO usa scrollIntoView: como
+   o iframe não tem rolagem própria, o navegador propaga o pedido para a página
+   pai e ela salta de um jeito que não dá para controlar. Em vez disso, avisa a
+   home com a posição do elemento e deixa ela enquadrar com a mesma régua usada
+   nas trocas de etapa. Fora do iframe, o comportamento nativo serve. */
+const bringIntoView = (element, block = "center") => {
+  if (!element) return;
+  if (!isEmbeddedCheckout()) {
+    element.scrollIntoView({ behavior: "smooth", block });
+    return;
+  }
+  const anchor = Math.max(0, Math.round(element.getBoundingClientRect().top));
+  parent.postMessage({
+    cz: "view",
+    step: Number(document.body.dataset.step) || 1,
+    topic: document.body.dataset.topic || "",
+    anchor,
+    force: true
+  }, embedTargetOrigin);
+};
+
 const notifyEmbedView = (step, topic) => {
   document.body.dataset.step = String(step);
   document.body.dataset.topic = topic;
@@ -145,7 +186,7 @@ const notifyEmbedView = (step, topic) => {
   if (embedViewFrame) return;
   embedViewFrame = window.requestAnimationFrame(() => {
     embedViewFrame = 0;
-    parent.postMessage({ cz: "view", ...pendingEmbedView }, embedTargetOrigin);
+    parent.postMessage({ cz: "view", ...pendingEmbedView, anchor: embedAnchorTop() }, embedTargetOrigin);
     pendingEmbedView = null;
     window.requestAnimationFrame(postEmbedHeight);
   });
@@ -217,7 +258,7 @@ const invalidateField = (field, message) => {
   showNotice(message);
   field?.setAttribute("aria-invalid", "true");
   field?.focus({ preventScroll: true });
-  field?.scrollIntoView({ behavior: "smooth", block: "center" });
+  bringIntoView(field, "center");
   return false;
 };
 
@@ -704,7 +745,13 @@ const renderRoomGallery = () => {
     const active = index === roomGalleryState.index;
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-current", String(active));
-    if (active) button.scrollIntoView({ block: "nearest", inline: "center" });
+    // Centraliza a miniatura ativa movendo só a tira, na horizontal. Com
+    // scrollIntoView o pedido vazava para a página pai (o iframe não tem
+    // rolagem própria) e a tela dava um salto vertical a cada troca de foto.
+    if (active && thumbs) {
+      const target = button.offsetLeft - (thumbs.clientWidth - button.offsetWidth) / 2;
+      thumbs.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
+    }
   });
   $$('[data-gallery-prev], [data-gallery-next]', modal).forEach((button) => {
     button.disabled = total <= 1;
@@ -778,7 +825,12 @@ const setupRoomCarousel = () => {
   };
   const go = (i) => {
     setActive(i);
-    cards[idx]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    // Move só a lista, na horizontal. Vale apenas quando ela está em modo
+    // carrossel; como lista vertical a navegação fica oculta e isto não roda.
+    const card = cards[idx];
+    if (!card || list.scrollWidth <= list.clientWidth) return;
+    const target = card.offsetLeft - (list.clientWidth - card.offsetWidth) / 2;
+    list.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
   };
 
   prev.onclick = () => go(idx - 1);
@@ -1453,7 +1505,7 @@ const showPartialPayment = (partial) => {
   updatePaymentHeading();
   refreshIcons();
   notifyEmbedView(3, "payment:pay:card:partial");
-  $("[data-partial-payment]")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  bringIntoView($("[data-partial-payment]"), "nearest");
 };
 
 const resetCardFields = () => {

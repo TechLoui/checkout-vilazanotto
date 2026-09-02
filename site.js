@@ -436,7 +436,14 @@ const initGalleryFilters = () => {
   buttons.forEach((button) => {
     button.addEventListener("click", () => {
       applyFilter(button.dataset.galleryFilter || "all");
-      button.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      // Centraliza o filtro movendo só a tira, na horizontal. Com
+      // scrollIntoView o `block: "nearest"` também empurrava a página na
+      // vertical ao trocar de filtro.
+      const strip = button.parentElement;
+      if (strip && strip.scrollWidth > strip.clientWidth) {
+        const target = button.offsetLeft - (strip.clientWidth - button.offsetWidth) / 2;
+        strip.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
+      }
     });
   });
 };
@@ -559,12 +566,28 @@ const initReserveEmbed = () => {
     stateFrame = window.requestAnimationFrame(setReserveState);
   };
 
-  const alignReserveFrame = () => {
+  /* Enquadra o checkout. `anchor` é a distância, dentro do iframe, até o
+     conteúdo que o hóspede precisa ver — 0 significa o topo.
+
+     Só rola quando a área realmente não está confortável na tela. Antes
+     realinhava a cada troca de sub-etapa, o que fazia a página saltar para o
+     começo do checkout bem na hora em que o hóspede estava preenchendo os
+     campos do cartão, mais abaixo. */
+  const alignReserveFrame = (anchor = 0) => {
     window.cancelAnimationFrame(alignFrame);
     alignFrame = window.requestAnimationFrame(() => {
       const header = $("[data-header]");
       const offset = mobileLayout.matches ? 8 : (header?.offsetHeight || 72) + 12;
-      const top = frameWrap.getBoundingClientRect().top + window.scrollY - offset;
+      const frameTop = frameWrap.getBoundingClientRect().top + window.scrollY;
+      const top = Math.max(0, frameTop + Math.max(0, anchor) - offset);
+
+      // Já visível numa faixa confortável? Não mexe — rolagem sem necessidade
+      // desorienta mais do que ajuda.
+      const anchorViewportTop = frameTop + Math.max(0, anchor) - window.scrollY;
+      const comfortableTop = offset;
+      const comfortableBottom = viewportHeight() * 0.6;
+      if (anchorViewportTop >= comfortableTop && anchorViewportTop <= comfortableBottom) return;
+
       if (Math.abs(window.scrollY - top) < 4) return;
       window.scrollTo({ top, behavior: motionPreference.matches ? "auto" : "smooth" });
     });
@@ -612,7 +635,7 @@ const initReserveEmbed = () => {
       updateSelectionBar();
       if (topicChanged && reserveIsNearViewport()) {
         setReserveState();
-        alignReserveFrame();
+        alignReserveFrame(Number.isFinite(data.anchor) ? data.anchor : 0);
       }
     } else if (data.cz === "step" && Number.isFinite(data.value)) {
       if (data.value !== lastStep && reserveIsNearViewport()) alignReserveFrame();
