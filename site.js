@@ -484,6 +484,9 @@ const initReserveEmbed = () => {
   if (!frame) return;
   const reserveSection = frame.closest(".reserve-section");
   const frameWrap = frame.closest(".reserve-frame-wrap") || frame;
+  const selectionBar = $("[data-reserve-selection-bar]");
+  const selectionCount = $("[data-reserve-selection-count]");
+  const selectionTotal = $("[data-reserve-selection-total]");
   const mobileLayout = window.matchMedia("(max-width: 680px)");
   const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -501,6 +504,8 @@ const initReserveEmbed = () => {
 
   let lastStep = 1;
   let lastTopic = "";
+  let selectedRoomCount = 0;
+  let selectedRoomTotal = 0;
   const purchaseSent = new Set(); // reservas já contadas no Pixel nesta página
   let stateFrame = 0;
   let alignFrame = 0;
@@ -515,12 +520,39 @@ const initReserveEmbed = () => {
 
   const setReserveState = () => {
     stateFrame = 0;
-    const active = mobileLayout.matches && reserveIsNearViewport();
+    const nearReservation = reserveIsNearViewport();
+    const active = mobileLayout.matches && nearReservation;
+    document.body.classList.toggle("is-reservation-in-view", nearReservation);
     document.body.classList.toggle("is-reserve-active", active);
     if (active && document.body.classList.contains("menu-open")) {
       $("[data-nav-toggle]")?.click();
     }
   };
+
+  const updateSelectionBar = () => {
+    if (!selectionBar) return;
+    const visible = lastTopic === "rooms" && selectedRoomCount > 0;
+    selectionBar.hidden = !visible;
+    document.body.classList.toggle("has-room-selection", visible);
+    if (selectionCount) {
+      selectionCount.textContent = selectedRoomCount === 1
+        ? "1 acomodação selecionada"
+        : `${selectedRoomCount} acomodações selecionadas`;
+    }
+    if (selectionTotal) {
+      selectionTotal.textContent = Number(selectedRoomTotal || 0).toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL"
+      });
+    }
+  };
+
+  const sendCheckoutCommand = (action) => {
+    frame.contentWindow?.postMessage({ cz: "command", action }, frameOrigin);
+  };
+
+  $("[data-reserve-selection-alter]")?.addEventListener("click", () => sendCheckoutCommand("rooms:alter"));
+  $("[data-reserve-selection-continue]")?.addEventListener("click", () => sendCheckoutCommand("rooms:continue"));
 
   const scheduleReserveState = () => {
     if (stateFrame) return;
@@ -577,6 +609,7 @@ const initReserveEmbed = () => {
       const topicChanged = data.topic !== lastTopic;
       lastStep = data.step;
       lastTopic = data.topic;
+      updateSelectionBar();
       if (topicChanged && reserveIsNearViewport()) {
         setReserveState();
         alignReserveFrame();
@@ -584,6 +617,11 @@ const initReserveEmbed = () => {
     } else if (data.cz === "step" && Number.isFinite(data.value)) {
       if (data.value !== lastStep && reserveIsNearViewport()) alignReserveFrame();
       lastStep = data.value;
+      updateSelectionBar();
+    } else if (data.cz === "room-cart" && Number.isFinite(data.count) && Number.isFinite(data.total)) {
+      selectedRoomCount = Math.max(0, Math.floor(data.count));
+      selectedRoomTotal = Math.max(0, data.total);
+      updateSelectionBar();
     } else if (data.cz === "purchase" && data.bookingId) {
       // Compra concluída dentro do iframe do checkout. O Pixel vive aqui na
       // home, então é daqui que o `Purchase` sai — assim a venda fica na mesma

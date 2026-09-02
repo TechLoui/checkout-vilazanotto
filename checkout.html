@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Lora:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="checkout.css?v=20260901-vila13">
+    <link rel="stylesheet" href="checkout.css?v=20260902-vila14">
     <!-- Backend de produção no Railway. Credenciais permanecem somente no servidor. -->
     <script>
       if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
@@ -18,7 +18,7 @@
       }
     </script>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-    <script src="checkout.js?v=20260901-vila19" defer></script>
+    <script src="checkout.js?v=20260902-vila20" defer></script>
   </head>
   <body data-step="1" data-topic="availability:dates">
     <a class="skip-link" href="#checkout-content">Ir para o conteúdo da reserva</a>
@@ -336,45 +336,176 @@
                 </div>
 
                 <div class="pay-pane is-hidden" data-pane="card">
-                  <div class="card-preview" data-card-preview data-brand="" aria-hidden="true">
-                    <div class="cardp-top">
-                      <span class="cardp-chip" aria-hidden="true"></span>
-                      <span class="cardp-brand" data-cardp-brand></span>
-                    </div>
-                    <div class="cardp-number" data-cardp-number>•••• •••• •••• ••••</div>
-                    <div class="cardp-bottom">
-                      <div class="cardp-fld"><small>Titular</small><span data-cardp-name>NOME COMPLETO</span></div>
-                      <div class="cardp-fld cardp-exp"><small>Validade</small><span data-cardp-exp>MM/AA</span></div>
-                    </div>
+                  <div class="card-count-choice" role="radiogroup" aria-label="Quantidade de cartões">
+                    <button class="card-count-option is-active" type="button" data-card-count="1" role="radio" aria-checked="true">
+                      <i data-lucide="credit-card" aria-hidden="true"></i>
+                      <span><strong>Um cartão</strong><small>Valor total</small></span>
+                    </button>
+                    <button class="card-count-option" type="button" data-card-count="2" role="radio" aria-checked="false" hidden>
+                      <i data-lucide="layers" aria-hidden="true"></i>
+                      <span><strong>Dois cartões</strong><small>Dividir o valor</small></span>
+                    </button>
                   </div>
-                  <fieldset class="form-block">
-                    <legend>Cartão de crédito</legend>
+
+                  <ol class="card-substeps" data-card-substeps hidden aria-label="Etapas do pagamento dividido">
+                    <li data-card-step-dot="amounts" class="is-active"><span>1</span> Valores</li>
+                    <li data-card-step-dot="1"><span>2</span> Cartão 1</li>
+                    <li data-card-step-dot="2"><span>3</span> Cartão 2</li>
+                  </ol>
+
+                  <section class="card-step split-amounts" data-card-step="amounts" hidden aria-labelledby="split-title">
+                    <div class="card-section-heading">
+                      <strong id="split-title">Como deseja dividir?</strong>
+                      <small>Os dois valores precisam somar o total da reserva.</small>
+                    </div>
                     <div class="grid">
-                      <div class="field col-2">
-                        <label for="c-number">Número do cartão*</label>
-                        <input id="c-number" name="cardNumber" inputmode="numeric" autocomplete="cc-number" placeholder="0000 0000 0000 0000" maxlength="23" required>
-                      </div>
-                      <div class="field col-2">
-                        <label for="c-name">Nome impresso no cartão*</label>
-                        <input id="c-name" name="holderName" autocomplete="cc-name" required>
+                      <div class="field">
+                        <label for="split-amount-1">Valor no cartão 1*</label>
+                        <input id="split-amount-1" type="text" inputmode="decimal" placeholder="0,00" data-split-amount="1">
                       </div>
                       <div class="field">
-                        <label for="c-exp">Validade (MM/AA)*</label>
-                        <input id="c-exp" name="exp" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/AA" maxlength="5" required>
-                      </div>
-                      <div class="field">
-                        <label for="c-cvv">CVV*</label>
-                        <input id="c-cvv" name="cvv" inputmode="numeric" autocomplete="cc-csc" placeholder="123" minlength="3" maxlength="4" required>
-                      </div>
-                      <div class="field col-2">
-                        <label for="c-inst">Parcelas</label>
-                        <select id="c-inst" name="installments"></select>
+                        <label for="split-amount-2">Valor no cartão 2*</label>
+                        <input id="split-amount-2" type="text" inputmode="decimal" placeholder="0,00" data-split-amount="2">
                       </div>
                     </div>
-                  </fieldset>
+                  </section>
+
+                  <section class="card-block card-step" data-card-block="1" data-card-step="1">
+                    <p class="card-block-title" data-card-title hidden>Cartão 1</p>
+                    <div class="card-preview" data-card-preview data-brand="" aria-hidden="true">
+                      <div class="cardp-top">
+                        <span class="cardp-chip" aria-hidden="true"></span>
+                        <span class="cardp-brand" data-card-preview-brand></span>
+                      </div>
+                      <div class="cardp-number" data-card-preview-number>•••• •••• •••• ••••</div>
+                      <div class="cardp-bottom">
+                        <div class="cardp-fld"><small>Titular</small><span data-card-preview-name>NOME COMPLETO</span></div>
+                        <div class="cardp-fld cardp-exp"><small>Validade</small><span data-card-preview-exp>MM/AA</span></div>
+                      </div>
+                    </div>
+                    <fieldset class="form-block">
+                      <legend>Dados do cartão</legend>
+                      <div class="grid">
+                        <div class="field col-2">
+                          <label for="c1-number">Número do cartão*</label>
+                          <input id="c1-number" name="card1Number" inputmode="numeric" autocomplete="cc-number" placeholder="0000 0000 0000 0000" maxlength="23" data-card-number required>
+                        </div>
+                        <div class="field col-2">
+                          <label for="c1-name">Nome impresso no cartão*</label>
+                          <input id="c1-name" name="card1HolderName" autocomplete="cc-name" data-card-name required>
+                        </div>
+                        <div class="field">
+                          <label for="c1-exp">Validade (MM/AA)*</label>
+                          <input id="c1-exp" name="card1Exp" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/AA" maxlength="5" data-card-exp required>
+                        </div>
+                        <div class="field">
+                          <label for="c1-cvv">CVV*</label>
+                          <input id="c1-cvv" name="card1Cvv" inputmode="numeric" autocomplete="cc-csc" placeholder="123" minlength="3" maxlength="4" data-card-cvv required>
+                        </div>
+                        <div class="field col-2">
+                          <label for="c1-inst">Parcelas</label>
+                          <select id="c1-inst" name="card1Installments" data-card-installments></select>
+                        </div>
+                      </div>
+                    </fieldset>
+                  </section>
+
+                  <section class="card-block card-step" data-card-block="2" data-card-step="2" hidden>
+                    <p class="card-block-title">Cartão 2</p>
+                    <div class="card-preview" data-card-preview data-brand="" aria-hidden="true">
+                      <div class="cardp-top">
+                        <span class="cardp-chip" aria-hidden="true"></span>
+                        <span class="cardp-brand" data-card-preview-brand></span>
+                      </div>
+                      <div class="cardp-number" data-card-preview-number>•••• •••• •••• ••••</div>
+                      <div class="cardp-bottom">
+                        <div class="cardp-fld"><small>Titular</small><span data-card-preview-name>NOME COMPLETO</span></div>
+                        <div class="cardp-fld cardp-exp"><small>Validade</small><span data-card-preview-exp>MM/AA</span></div>
+                      </div>
+                    </div>
+                    <fieldset class="form-block">
+                      <legend>Dados do cartão</legend>
+                      <div class="grid">
+                        <div class="field col-2">
+                          <label for="c2-number">Número do cartão*</label>
+                          <input id="c2-number" name="card2Number" inputmode="numeric" autocomplete="cc-number" placeholder="0000 0000 0000 0000" maxlength="23" data-card-number required>
+                        </div>
+                        <div class="field col-2">
+                          <label for="c2-name">Nome impresso no cartão*</label>
+                          <input id="c2-name" name="card2HolderName" autocomplete="cc-name" data-card-name required>
+                        </div>
+                        <div class="field">
+                          <label for="c2-exp">Validade (MM/AA)*</label>
+                          <input id="c2-exp" name="card2Exp" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/AA" maxlength="5" data-card-exp required>
+                        </div>
+                        <div class="field">
+                          <label for="c2-cvv">CVV*</label>
+                          <input id="c2-cvv" name="card2Cvv" inputmode="numeric" autocomplete="cc-csc" placeholder="123" minlength="3" maxlength="4" data-card-cvv required>
+                        </div>
+                        <div class="field col-2">
+                          <label for="c2-inst">Parcelas</label>
+                          <select id="c2-inst" name="card2Installments" data-card-installments></select>
+                        </div>
+                      </div>
+                    </fieldset>
+                  </section>
+
+                  <div class="split-summary" data-split-summary hidden aria-live="polite">
+                    <div><span>Soma dos cartões</span><strong data-split-sum>R$ 0,00</strong></div>
+                    <div><span>Total da reserva</span><strong data-split-total>R$ 0,00</strong></div>
+                    <p data-split-message></p>
+                  </div>
+
+                  <section class="partial-payment" data-partial-payment hidden aria-live="polite">
+                    <p class="partial-payment-title">
+                      <i data-lucide="alert-triangle" aria-hidden="true"></i>
+                      <span data-partial-title>Um dos cartões não foi aprovado</span>
+                    </p>
+                    <p class="partial-payment-reason" data-partial-reason></p>
+                    <div class="partial-payment-status" data-partial-status></div>
+                    <p class="partial-payment-hint">
+                      O valor aprovado está <strong>apenas reservado, ainda não cobrado</strong>.
+                      Informe outro cartão para o restante e conclua a reserva.
+                    </p>
+                    <div class="grid" data-retry-card>
+                      <div class="field col-2">
+                        <label for="retry-number">Número do novo cartão*</label>
+                        <input id="retry-number" inputmode="numeric" autocomplete="cc-number" placeholder="0000 0000 0000 0000" maxlength="23" data-card-number>
+                      </div>
+                      <div class="field col-2">
+                        <label for="retry-name">Nome impresso no cartão*</label>
+                        <input id="retry-name" autocomplete="cc-name" data-card-name>
+                      </div>
+                      <div class="field">
+                        <label for="retry-exp">Validade*</label>
+                        <input id="retry-exp" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/AA" maxlength="5" data-card-exp>
+                      </div>
+                      <div class="field">
+                        <label for="retry-cvv">CVV*</label>
+                        <input id="retry-cvv" inputmode="numeric" autocomplete="cc-csc" placeholder="123" maxlength="4" data-card-cvv>
+                      </div>
+                      <div class="field col-2">
+                        <label for="retry-inst">Parcelas</label>
+                        <select id="retry-inst" data-retry-installments></select>
+                      </div>
+                    </div>
+                    <div class="partial-payment-actions">
+                      <button class="btn btn-primary" type="button" data-retry-submit>
+                        <i data-lucide="credit-card" aria-hidden="true"></i>
+                        Pagar restante e concluir
+                      </button>
+                      <a class="btn btn-ghost" data-partial-support target="_blank" rel="noreferrer" href="https://wa.me/5564984398408">
+                        <i data-lucide="message-circle" aria-hidden="true"></i>
+                        Falar com o suporte
+                      </a>
+                    </div>
+                    <button class="partial-payment-cancel" type="button" data-partial-cancel>
+                      Desistir e liberar o valor reservado
+                    </button>
+                  </section>
                 </div>
 
-                <div class="form-actions two-actions">
+                <div class="form-actions two-actions" data-main-payment-actions>
                   <button class="btn btn-ghost" type="button" data-payback="guest">
                     <i data-lucide="arrow-left" aria-hidden="true"></i>
                     Voltar

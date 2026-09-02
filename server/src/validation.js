@@ -134,48 +134,88 @@ export const validateStayGuest = (body) => {
 /** Valida o payload de pagamento PIX (reserva + hóspede, sem cartão). */
 export const validatePix = (body) => validateStayGuest(body);
 
-/** Valida o payload completo do checkout por cartão (reserva + hóspede + cartão). */
-export const validateCheckout = (body, maxInstallments) => {
-  const stay = validateStayGuest(body);
-
-  const installments = Number(body.installments) || 1;
-  if (!Number.isInteger(installments) || installments < 1 || installments > maxInstallments) {
-    throw new ValidationError(`Número de parcelas inválido (1 a ${maxInstallments}).`);
-  }
-
-  const card = body.card || {};
+/** Valida um cartão, incluindo parcelas e o valor opcional da divisão. */
+export const validateOneCard = (raw, maxInstallments, label = "") => {
+  const card = raw || {};
+  const where = label ? ` (${label})` : "";
   const cardNumber = onlyDigits(card.number);
   const cvv = onlyDigits(card.securityCode);
   const expMonth = Number(card.expirationMonth);
   const expYear = Number(card.expirationYear);
   if (cardNumber.length < 13 || cardNumber.length > 19) {
-    throw new ValidationError("Número do cartão inválido.");
+    throw new ValidationError(`Número do cartão inválido${where}.`);
   }
   if (!String(card.holderName || "").trim()) {
-    throw new ValidationError("Nome impresso no cartão é obrigatório.");
+    throw new ValidationError(`Nome impresso no cartão é obrigatório${where}.`);
   }
   if (!Number.isInteger(expMonth) || expMonth < 1 || expMonth > 12) {
-    throw new ValidationError("Mês de validade do cartão inválido.");
+    throw new ValidationError(`Mês de validade do cartão inválido${where}.`);
   }
   const fullYear = expYear < 100 ? 2000 + expYear : expYear;
   const now = new Date();
   const expDate = new Date(fullYear, expMonth, 0, 23, 59, 59);
   if (Number.isNaN(expDate.getTime()) || expDate < now) {
-    throw new ValidationError("Cartão vencido ou validade inválida.");
+    throw new ValidationError(`Cartão vencido ou validade inválida${where}.`);
   }
   if (cvv.length < 3 || cvv.length > 4) {
-    throw new ValidationError("Código de segurança (CVV) inválido.");
+    throw new ValidationError(`Código de segurança (CVV) inválido${where}.`);
+  }
+
+  const installments = Number(card.installments) || 1;
+  if (!Number.isInteger(installments) || installments < 1 || installments > maxInstallments) {
+    throw new ValidationError(`Número de parcelas inválido${where} (1 a ${maxInstallments}).`);
+  }
+
+  return {
+    number: cardNumber,
+    holderName: String(card.holderName).trim(),
+    expirationMonth: expMonth,
+    expirationYear: fullYear,
+    securityCode: cvv,
+    installments,
+    // Centavos evitam diferenças de ponto flutuante na soma dos dois cartões.
+    amountCents: card.amount == null ? null : Math.round(Number(card.amount) * 100)
+  };
+};
+
+/**
+ * Valida o checkout por cartão. Aceita o contrato novo `cards` (um ou dois)
+ * e o contrato legado `card` + `installments`, para permitir deploy gradual.
+ */
+export const validateCheckout = (body, maxInstallments) => {
+  const stay = validateStayGuest(body);
+  const rawCards = Array.isArray(body.cards) && body.cards.length
+    ? body.cards
+    : [{ ...(body.card || {}), installments: body.installments, amount: null }];
+
+  if (rawCards.length > 2) {
+    throw new ValidationError("É possível dividir o pagamento em no máximo dois cartões.");
+  }
+
+  const cards = rawCards.map((card, index) =>
+    validateOneCard(card, maxInstallments, rawCards.length > 1 ? `cartão ${index + 1}` : "")
+  );
+
+  if (cards.length > 1) {
+    if (cards.some((card) => card.amountCents == null)) {
+      throw new ValidationError("Informe quanto será cobrado em cada cartão.");
+    }
+    if (cards.some((card) => !Number.isFinite(card.amountCents) || card.amountCents <= 0)) {
+      throw new ValidationError("O valor de cada cartão precisa ser maior que zero.");
+    }
   }
 
   return {
     ...stay,
-    installments,
+    cards,
+    // Compatibilidade interna com o formato anterior.
+    installments: cards[0].installments,
     card: {
-      number: cardNumber,
-      holderName: String(card.holderName).trim(),
-      expirationMonth: expMonth,
-      expirationYear: fullYear,
-      securityCode: cvv
+      number: cards[0].number,
+      holderName: cards[0].holderName,
+      expirationMonth: cards[0].expirationMonth,
+      expirationYear: cards[0].expirationYear,
+      securityCode: cards[0].securityCode
     }
   };
 };

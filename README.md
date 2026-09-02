@@ -7,8 +7,8 @@ fotos foram organizados a partir do site oficial, com a identidade visual em
 ## Estrutura
 
 - `index.html`, `styles.css` e `site.js`: site institucional responsivo.
-- `checkout.html`, `checkout.css` e `checkout.js`: busca, escolha da acomodação
-  e pagamento, também carregados dentro do site por iframe.
+- `checkout.html`, `checkout.css` e `checkout.js`: motor embutido na própria
+  página, com seleção múltipla e pagamento por PIX, um ou dois cartões.
 - `assets/gallery`: galeria oficial em WebP.
 - `server`: API Node.js para ArtaxNet, Rede, PIX Itaú, Resend e Asksuite.
 
@@ -34,7 +34,7 @@ GET /api/availability?arrival_date=2026-09-10&departure_date=2026-09-12&adults=2
 ```
 
 As credenciais ficam exclusivamente nas variáveis do Railway. Além das
-credenciais Rede/Itaú e `MAX_INSTALLMENTS`, a reserva depende de
+credenciais Rede/Itaú, `MAX_INSTALLMENTS` e `MIN_CARD_AMOUNT`, a reserva depende de
 `ARTAX_CLIENT_ID` e `ARTAX_CLIENT_SECRET`. PIX Itaú por mTLS exige também
 `ITAU_CERT_B64`; envio de e-mail exige `RESEND_FROM` junto de
 `RESEND_API_KEY`. A lista completa e comentada está em

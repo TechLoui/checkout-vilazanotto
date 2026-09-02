@@ -4671,3 +4671,250 @@ legend,
   display: block;
   margin-bottom: 18px;
 }
+
+/* ==================================================================
+   Pagamento em um ou dois cartões
+   ================================================================== */
+.card-count-choice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.card-count-choice:has([data-card-count="2"][hidden]) {
+  grid-template-columns: 1fr;
+}
+
+.card-count-option[hidden] { display: none; }
+
+.card-count-option {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 58px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.card-count-option > svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  color: var(--orange-dark);
+}
+
+.card-count-option span {
+  display: grid;
+  gap: 2px;
+}
+
+.card-count-option strong { font-size: 0.92rem; }
+.card-count-option small { color: var(--muted); font-size: 0.75rem; }
+
+.card-count-option.is-active {
+  border-color: var(--orange);
+  background: rgba(241, 188, 14, 0.08);
+  box-shadow: var(--shadow-orange);
+}
+
+.card-substeps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.card-substeps[hidden],
+.card-step[hidden],
+.split-summary[hidden],
+.partial-payment[hidden],
+[data-main-payment-actions][hidden],
+.card-count-choice[hidden] {
+  display: none !important;
+}
+
+.card-substeps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+
+.card-substeps li::after {
+  content: "";
+  height: 2px;
+  flex: 1;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.card-substeps li:last-child::after { display: none; }
+
+.card-substeps li > span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.card-substeps li.is-active { color: var(--orange-dark); }
+.card-substeps li.is-active > span {
+  border-color: var(--orange);
+  background: var(--orange);
+  color: #3a2c05;
+}
+.card-substeps li.is-done > span {
+  border-color: var(--orange);
+  background: rgba(241, 188, 14, 0.12);
+  color: var(--orange-dark);
+}
+
+.card-section-heading {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 12px;
+}
+
+.card-section-heading strong { font-size: 1rem; }
+.card-section-heading small { color: var(--muted); line-height: 1.4; }
+
+.card-block-title {
+  margin: 0 0 10px;
+  color: var(--orange-dark);
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.split-summary {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(98, 62, 42, 0.035);
+}
+
+.split-summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+
+.split-summary > div + div { margin-top: 5px; }
+.split-summary p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.split-summary p.is-ok { color: #23754f; }
+.split-summary p.is-error { color: #a73b31; }
+
+.partial-payment {
+  padding: 16px;
+  border: 1.5px solid var(--orange);
+  border-radius: var(--radius);
+  background: rgba(241, 188, 14, 0.075);
+}
+
+.partial-payment-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-weight: 850;
+}
+.partial-payment-title svg { width: 20px; height: 20px; color: var(--orange-dark); }
+.partial-payment-reason { margin: 0 0 12px; color: var(--muted); font-size: 0.88rem; }
+.partial-payment-hint { margin: 12px 0; font-size: 0.86rem; line-height: 1.5; }
+
+.partial-payment-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.partial-payment-cancel {
+  display: block;
+  margin: 12px auto 0;
+  padding: 5px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  opacity: 0.72;
+  cursor: pointer;
+}
+
+.charge-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  text-align: left;
+}
+.charge-status + .charge-status { margin-top: 8px; }
+.charge-status small { grid-column: 1 / -1; color: var(--muted); font-size: 0.74rem; }
+.charge-status.is-pending { border-color: var(--orange); }
+
+.success-charges {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+.success-charges-title {
+  color: var(--muted);
+  font-size: 0.76rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 760px) {
+  /* A barra real fica na página principal, fixa na viewport do celular. */
+  body.embed .room-cart { display: none; }
+
+  body.embed .card-count-choice { gap: 7px; margin-bottom: 10px; }
+  body.embed .card-count-option {
+    min-height: 52px;
+    padding: 8px 9px;
+    gap: 7px;
+  }
+  body.embed .card-count-option > svg { width: 18px; height: 18px; }
+  body.embed .card-count-option strong { font-size: 0.78rem; }
+  body.embed .card-count-option small { font-size: 0.62rem; }
+  body.embed .card-substeps { margin-bottom: 9px; }
+  body.embed .card-substeps li { font-size: 0.64rem; }
+  body.embed .card-substeps li > span { width: 20px; height: 20px; }
+  body.embed .card-section-heading { margin-bottom: 8px; }
+  body.embed .card-section-heading small { font-size: 0.72rem; }
+  body.embed .split-summary { margin-top: 9px; padding: 9px 10px; }
+  body.embed .split-summary > div { font-size: 0.78rem; }
+  body.embed .split-summary p { font-size: 0.7rem; }
+  body.embed .partial-payment { padding: 11px; }
+  body.embed .partial-payment-actions { grid-template-columns: 1fr; }
+  body.embed .partial-payment-actions .btn { width: 100%; }
+}

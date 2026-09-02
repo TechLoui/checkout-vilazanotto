@@ -8,7 +8,14 @@ import { validateAvailability, validateCheckout, validatePix, ValidationError } 
 import { checkAvailability, listCostCenters, ArtaxError } from "./artaxnet.js";
 import { RedeError } from "./rede.js";
 import { ItauError } from "./itau.js";
-import { processCheckout, createPixCharge, confirmPix, reconcilePendingPix } from "./bookingFlow.js";
+import {
+  processCheckout,
+  retrySplitCard,
+  cancelSplitSession,
+  createPixCharge,
+  confirmPix,
+  reconcilePendingPix
+} from "./bookingFlow.js";
 import { verifyArtaxWebhook, handleArtaxEvent } from "./webhooks.js";
 
 assertConfig();
@@ -61,7 +68,11 @@ app.get("/api/health", (req, res) => res.json({ ok: true, env: config.nodeEnv })
 // Configuracao publica em lista positiva. Nunca inclua credenciais neste objeto.
 app.get("/api/config", (req, res) => {
   res.set("Cache-Control", "public, max-age=300");
-  res.json({ maxInstallments: config.rede.maxInstallments });
+  res.json({
+    maxInstallments: config.rede.maxInstallments,
+    minCardAmount: config.rede.minCardAmount,
+    splitCards: true
+  });
 });
 
 // Normaliza o preço para TOTAL da estadia quando o Artax devolve por diária,
@@ -117,6 +128,30 @@ app.post("/api/checkout", async (req, res, next) => {
     const input = validateCheckout(req.body, config.rede.maxInstallments);
     const result = await processCheckout(input);
     res.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Pagamento dividido: troca somente o cartão recusado. A autorização que já
+// passou continua retida no servidor e não precisa ser digitada novamente.
+app.post("/api/checkout/retry-card", async (req, res, next) => {
+  try {
+    const sessionId = String(req.body?.sessionId || "").trim();
+    if (!sessionId) throw new ValidationError("Sessão de pagamento não informada.");
+    const result = await retrySplitCard(sessionId, req.body?.card || {}, config.rede.maxInstallments);
+    res.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Pagamento dividido: desiste da tentativa e libera o limite já reservado.
+app.post("/api/checkout/cancel-split", async (req, res, next) => {
+  try {
+    const sessionId = String(req.body?.sessionId || "").trim();
+    if (!sessionId) throw new ValidationError("Sessão de pagamento não informada.");
+    res.json(await cancelSplitSession(sessionId));
   } catch (error) {
     next(error);
   }
@@ -231,7 +266,8 @@ app.use((error, req, res, _next) => {
   return res.status(status).json({
     error: status < 500 || error?.expose === true
       ? error.message
-      : "Erro interno. Tente novamente em instantes."
+      : "Erro interno. Tente novamente em instantes.",
+    ...(error?.partial ? { partial: error.partial } : {})
   });
 });
 

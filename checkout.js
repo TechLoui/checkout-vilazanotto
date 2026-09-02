@@ -11,6 +11,10 @@ const API_BASE = (
   (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "http://localhost:8080/api" : "/api")
 ).replace(/\/$/, "");
 let INSTALLMENTS_MAX = 4;
+let MIN_CARD_AMOUNT = 5;
+let SPLIT_CARDS_ENABLED = false;
+let paymentCardCount = 1;
+let cardStep = "1";
 const DEFAULT_SUMMARY_IMAGE = "assets/logo.png";
 const LOGO_IMAGE = "assets/logo.png";
 const FALLBACK_ROOM_IMAGES = [
@@ -32,14 +36,19 @@ const loadPublicConfig = async () => {
     if (!response.ok) return;
     const data = await readJSON(response);
     const max = Number(data.maxInstallments);
+    const minimum = Number(data.minCardAmount);
+    if (Number.isFinite(minimum) && minimum > 0) MIN_CARD_AMOUNT = minimum;
+    SPLIT_CARDS_ENABLED = data.splitCards === true;
+    const splitOption = $('[data-card-count="2"]');
+    if (splitOption) splitOption.hidden = !SPLIT_CARDS_ENABLED;
     if (Number.isInteger(max) && max >= 1 && max <= 12) {
-      const selectedInstallments = Number($("#c-inst")?.value) || 1;
+      const selectedInstallments = $$('[data-card-installments]').map((select) => Number(select.value) || 1);
       INSTALLMENTS_MAX = max;
-      const installmentLabel = $("[data-card-installments]");
-      if (installmentLabel) installmentLabel.textContent = max === 1 ? "Pagamento à vista" : `Em até ${max}x sem juros`;
       if (cartCount()) {
         buildInstallments(cartTotal());
-        if (selectedInstallments <= max) $("#c-inst").value = String(selectedInstallments);
+        $$('[data-card-installments]').forEach((select, index) => {
+          if (selectedInstallments[index] <= max) select.value = String(selectedInstallments[index]);
+        });
       }
     }
   } catch (_) {
@@ -49,6 +58,15 @@ const loadPublicConfig = async () => {
 
 const brl = (value) =>
   Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+// Aceita tanto "1.500,00" quanto "1500.00" e trabalha em centavos ao
+// conferir a divisão, evitando diferenças de ponto flutuante.
+const parseMoney = (raw) => {
+  const value = String(raw || "").replace(/[^\d.,]/g, "");
+  if (!value) return NaN;
+  return Number(value.includes(",") ? value.replace(/\./g, "").replace(",", ".") : value);
+};
+const toCents = (value) => Math.round(Number(value) * 100);
 
 const $ = (sel, ctx = document) => ctx.querySelector(sel);
 const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
@@ -174,6 +192,16 @@ const initEmbed = () => {
   if ("ResizeObserver" in window) new ResizeObserver(postEmbedHeight).observe(document.body);
   window.addEventListener("load", postEmbedHeight);
   window.addEventListener("resize", postEmbedHeight);
+  window.addEventListener("message", (event) => {
+    if (event.source !== parent || event.origin !== embedTargetOrigin) return;
+    const action = event.data?.action;
+    if (event.data?.cz !== "command") return;
+    if (action === "rooms:continue") confirmRoomSelection();
+    if (action === "rooms:alter") {
+      goToStep(1);
+      goToSearchStep("dates");
+    }
+  });
   notifyEmbedView(Number(document.body.dataset.step) || 1, document.body.dataset.topic || "availability:dates");
   setTimeout(postEmbedHeight, 300);
 };
@@ -775,17 +803,28 @@ const setupRoomCarousel = () => {
   setActive(0);
 };
 
-const buildInstallments = (price) => {
-  const sel = $("#c-inst");
-  if (!sel) return;
-  sel.innerHTML = "";
+const fillInstallments = (select, price) => {
+  if (!select) return;
+  const previous = Number(select.value) || 1;
+  const base = Number.isFinite(Number(price)) && Number(price) > 0 ? Number(price) : 0;
+  select.innerHTML = "";
   for (let n = 1; n <= INSTALLMENTS_MAX; n += 1) {
-    const each = price / n;
+    const each = base / n;
     const o = document.createElement("option");
     o.value = String(n);
-    o.textContent = n === 1 ? `À vista — ${brl(price)}` : `${n}x de ${brl(each)} sem juros`;
-    sel.appendChild(o);
+    o.textContent = n === 1 ? `À vista — ${brl(base)}` : `${n}x de ${brl(each)} sem juros`;
+    select.appendChild(o);
   }
+  select.value = String(Math.min(Math.max(previous, 1), INSTALLMENTS_MAX));
+};
+
+const buildInstallments = (price) => {
+  $$('[data-card-block]').forEach((block) => {
+    const index = Number(block.dataset.cardBlock) || 1;
+    const splitValue = parseMoney($(`[data-split-amount="${index}"]`)?.value);
+    const base = paymentCardCount === 2 && Number.isFinite(splitValue) ? splitValue : price;
+    fillInstallments($('[data-card-installments]', block), base);
+  });
 };
 
 /* Antes: clicar num card selecionava e já pulava pra etapa 3. Com seleção
@@ -839,6 +878,13 @@ const updateRoomCart = () => {
   if (total) total.textContent = brl(cartTotal());
   const btn = $("[data-rooms-continue]", bar);
   if (btn) btn.disabled = count === 0;
+  if (isEmbeddedCheckout()) {
+    parent.postMessage({
+      cz: "room-cart",
+      count,
+      total: cartTotal()
+    }, embedTargetOrigin);
+  }
 };
 
 const confirmRoomSelection = () => {
@@ -969,14 +1015,157 @@ const guardActivePix = () => {
 
 const PAYSTEPS = ["guest", "pay"];
 let payStep = "guest";
+const CARD_STEPS = ["amounts", "1", "2"];
+let partialSession = null;
+let paymentBusy = false;
+
+const cardBlocks = () => $$('[data-card-block]');
+const cardBlock = (index) => $(`[data-card-block="${index}"]`);
+const splitAmountInput = (index) => $(`[data-split-amount="${index}"]`);
+const splitParts = () => [1, 2].map((index) => parseMoney(splitAmountInput(index)?.value));
+
+const cardTopic = () => paymentCardCount === 2 ? `payment:pay:card:${cardStep}` : "payment:pay:card";
 
 const payStepTitle = (name) =>
   name === "guest" ? "Dados do hóspede"
-    : name === "pay" ? (payMethod === "pix" ? "Pague com PIX" : "Dados do cartão")
+    : name === "pay" ? (payMethod === "pix"
+      ? "Pague com PIX"
+      : paymentCardCount === 2 && cardStep === "amounts"
+        ? "Divida o pagamento"
+        : paymentCardCount === 2
+          ? `Dados do cartão ${cardStep}`
+          : "Dados do cartão")
       : "Dados do hóspede";
+
+const updatePaymentHeading = () => {
+  const title = $("[data-paystep-title]");
+  const intro = $("[data-paystep-intro]");
+  if (title) title.textContent = payStepTitle(payStep);
+  if (!intro) return;
+  if (payStep === "guest") intro.textContent = "Preencha seus dados.";
+  else if (payMethod === "pix") intro.textContent = "Finalize com PIX.";
+  else if (paymentCardCount === 2 && cardStep === "amounts") intro.textContent = "Defina quanto será cobrado em cada cartão.";
+  else if (paymentCardCount === 2) intro.textContent = `Informe os dados do cartão ${cardStep}.`;
+  else intro.textContent = "Informe os dados do cartão.";
+};
+
+const syncCardFieldAvailability = () => {
+  const pane = $('[data-pane="card"]');
+  if (!pane) return;
+  $$('input, select', pane).forEach((field) => { field.disabled = true; });
+  if (payMethod !== "card" || payStep !== "pay") return;
+  if (partialSession) {
+    $$('input, select', $('[data-retry-card]')).forEach((field) => { field.disabled = false; });
+    const retryInstallments = $('[data-retry-installments]');
+    if (retryInstallments) retryInstallments.disabled = false;
+    return;
+  }
+  if (paymentCardCount === 2 && cardStep === "amounts") {
+    $$('[data-split-amount]').forEach((field) => { field.disabled = false; });
+    return;
+  }
+  const active = cardBlock(paymentCardCount === 1 ? 1 : Number(cardStep));
+  $$('input, select', active).forEach((field) => { field.disabled = false; });
+};
+
+const syncCardUI = () => {
+  const partial = $('[data-partial-payment]');
+  const choice = $('.card-count-choice');
+  const substeps = $('[data-card-substeps]');
+  const mainActions = $('[data-main-payment-actions]');
+  if (choice) choice.hidden = Boolean(partialSession);
+  if (substeps) substeps.hidden = paymentCardCount !== 2 || Boolean(partialSession);
+  if (partial) partial.hidden = !partialSession;
+  if (mainActions) mainActions.hidden = Boolean(partialSession);
+
+  $$('[data-card-step]').forEach((section) => {
+    const visible = !partialSession && (
+      paymentCardCount === 1
+        ? section.dataset.cardStep === "1"
+        : section.dataset.cardStep === cardStep
+    );
+    section.hidden = !visible;
+  });
+  cardBlocks().forEach((block) => {
+    const title = $('[data-card-title]', block);
+    if (title) title.hidden = paymentCardCount === 1;
+  });
+  const summary = $('[data-split-summary]');
+  if (summary) summary.hidden = Boolean(partialSession) || paymentCardCount !== 2 || cardStep !== "amounts";
+  syncCardFieldAvailability();
+};
+
+const updateCardSubmitLabel = () => {
+  const label = $("#pay-btn .label");
+  if (!label || paymentBusy) return;
+  if (payMethod === "pix") label.textContent = "Gerar PIX";
+  else if (paymentCardCount === 2 && cardStep !== "2") label.textContent = "Continuar";
+  else label.textContent = "Pagar e reservar";
+};
+
+const goToCardStep = (name) => {
+  cardStep = CARD_STEPS.includes(name) ? name : "amounts";
+  const current = CARD_STEPS.indexOf(cardStep);
+  $$('[data-card-step-dot]').forEach((dot) => {
+    const index = CARD_STEPS.indexOf(dot.dataset.cardStepDot);
+    dot.classList.toggle("is-active", index === current);
+    dot.classList.toggle("is-done", index < current);
+  });
+  syncCardUI();
+  updateSplitSummary();
+  if (cardStep !== "amounts") buildInstallments(cartTotal());
+  updatePaymentHeading();
+  updateCardSubmitLabel();
+  refreshIcons();
+  if (Number(document.body.dataset.step) === 3) notifyEmbedView(3, cardTopic());
+};
+
+const setPaymentCardCount = (count) => {
+  const next = Number(count) === 2 ? 2 : 1;
+  if (next === 2 && !SPLIT_CARDS_ENABLED) {
+    showNotice("A divisão em dois cartões está temporariamente indisponível. Use um cartão ou PIX.", "info");
+    return;
+  }
+  if (next === 2 && toCents(cartTotal()) < toCents(MIN_CARD_AMOUNT) * 2) {
+    showNotice(
+      `Para dividir, a reserva precisa ter pelo menos ${brl(MIN_CARD_AMOUNT * 2)} `
+      + `(mínimo de ${brl(MIN_CARD_AMOUNT)} por cartão).`,
+      "info"
+    );
+    return;
+  }
+  paymentCardCount = next;
+  $$('[data-card-count]').forEach((button) => {
+    const active = Number(button.dataset.cardCount) === paymentCardCount;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-checked", String(active));
+  });
+  if (paymentCardCount === 2) {
+    const inputs = [splitAmountInput(1), splitAmountInput(2)];
+    if (inputs.every((input) => input && !input.value)) {
+      const totalCents = toCents(cartTotal());
+      const first = Math.floor(totalCents / 2);
+      inputs[0].value = (first / 100).toFixed(2).replace(".", ",");
+      inputs[1].value = ((totalCents - first) / 100).toFixed(2).replace(".", ",");
+    }
+    goToCardStep("amounts");
+  } else {
+    cardStep = "1";
+    buildInstallments(cartTotal());
+    syncCardUI();
+    updateSplitSummary();
+    updatePaymentHeading();
+    updateCardSubmitLabel();
+  }
+  persistState();
+};
 
 const goToPayStep = (name) => {
   if (name !== "pay" && guardActivePix()) return;
+  if (name !== "pay" && partialSession) {
+    showNotice("Conclua o valor restante ou libere a autorização antes de voltar.", "info");
+    return;
+  }
   payStep = name;
   $$("[data-paystep]").forEach((p) => p.classList.toggle("is-hidden", p.dataset.paystep !== name));
   const cur = PAYSTEPS.indexOf(name);
@@ -987,20 +1176,9 @@ const goToPayStep = (name) => {
     d.setAttribute("aria-current", i === cur ? "step" : "false");
   });
   const title = $("[data-paystep-title]");
-  const intro = $("[data-paystep-intro]");
-  if (title) title.textContent = payStepTitle(name);
-  if (intro) {
-    intro.textContent = name === "guest"
-      ? "Preencha seus dados."
-      : name === "pay"
-        ? (payMethod === "pix" ? "Finalize com PIX." : "Informe os dados do cartão.")
-        : "Escolha PIX ou cartão.";
-  }
-  if (name === "pay") setPayMethod(payMethod); // garante painel/campos corretos ao chegar
-  else ["#c-number", "#c-name", "#c-exp", "#c-cvv", "#c-inst"].forEach((sel) => {
-    const field = $(sel);
-    if (field) field.disabled = true;
-  });
+  updatePaymentHeading();
+  if (name === "pay") setPayMethod(payMethod);
+  else syncCardFieldAvailability();
   refreshIcons();
   focusHeading(title);
   persistState();
@@ -1008,7 +1186,7 @@ const goToPayStep = (name) => {
     const topic = name === "guest"
       ? "payment:guest"
       : name === "pay"
-        ? `payment:pay:${payMethod}`
+        ? (payMethod === "card" ? cardTopic() : `payment:pay:${payMethod}`)
         : "payment:guest";
     notifyEmbedView(3, topic);
   } else {
@@ -1019,6 +1197,10 @@ const goToPayStep = (name) => {
 /* Dados do hóspede em 3 mini-etapas: nome -> contato -> documento */
 const setPayMethod = (method) => {
   if (method !== "pix" && guardActivePix()) return;
+  if (partialSession && method !== "card") {
+    showNotice("Conclua o valor restante ou libere a autorização antes de trocar a forma de pagamento.", "info");
+    return;
+  }
   payMethod = method;
   $$("[data-pay-method]").forEach((t) => {
     const active = t.dataset.payMethod === method;
@@ -1026,20 +1208,15 @@ const setPayMethod = (method) => {
     t.setAttribute("aria-pressed", String(active));
   });
   $$("[data-pane]").forEach((p) => p.classList.toggle("is-hidden", p.dataset.pane !== method));
-  // Só valida cartão quando o respectivo painel de pagamento está visível.
-  ["#c-number", "#c-name", "#c-exp", "#c-cvv", "#c-inst"].forEach((sel) => {
-    const el = $(sel);
-    if (el) el.disabled = method !== "card" || payStep !== "pay";
-  });
-  const label = $("#pay-btn .label");
-  if (label) label.textContent = method === "pix" ? "Gerar PIX" : "Pagar e reservar";
-  const title = $("[data-paystep-title]");
-  if (title && payStep === "pay") title.textContent = payStepTitle("pay");
-  const intro = $("[data-paystep-intro]");
-  if (intro && payStep === "pay") intro.textContent = method === "pix" ? "Finalize com PIX." : "Informe os dados do cartão.";
+  syncCardUI();
+  if (method === "card") buildInstallments(cartTotal());
+  if (method === "card") updateSplitSummary();
+  else if (!paymentBusy && !partialSession) $("#pay-btn").disabled = false;
+  updatePaymentHeading();
+  updateCardSubmitLabel();
   persistState();
   if (Number(document.body.dataset.step) === 3) {
-    notifyEmbedView(3, payStep === "pay" ? `payment:pay:${method}` : `payment:${payStep}`);
+    notifyEmbedView(3, payStep === "pay" ? (method === "card" ? cardTopic() : `payment:pay:${method}`) : `payment:${payStep}`);
   }
 };
 
@@ -1060,16 +1237,16 @@ const detectBrand = (digits) => {
 const previewNumber = (digits) =>
   ((digits || "") + "•".repeat(16)).slice(0, 16).replace(/(.{4})/g, "$1 ").trim();
 
-const updateCardPreview = () => {
-  const prev = $("[data-card-preview]");
+const updateCardPreview = (block) => {
+  const prev = $("[data-card-preview]", block);
   if (!prev) return;
-  const digits = ($("#c-number")?.value || "").replace(/\D/g, "");
+  const digits = ($("[data-card-number]", block)?.value || "").replace(/\D/g, "");
   const { key, label } = detectBrand(digits);
   prev.dataset.brand = key;
-  $("[data-cardp-number]").textContent = previewNumber(digits);
-  $("[data-cardp-name]").textContent = ($("#c-name")?.value || "").trim().toUpperCase() || "NOME COMPLETO";
-  $("[data-cardp-exp]").textContent = $("#c-exp")?.value || "MM/AA";
-  $("[data-cardp-brand]").textContent = label;
+  $("[data-card-preview-number]", prev).textContent = previewNumber(digits);
+  $("[data-card-preview-name]", prev).textContent = ($("[data-card-name]", block)?.value || "").trim().toUpperCase() || "NOME COMPLETO";
+  $("[data-card-preview-exp]", prev).textContent = $("[data-card-exp]", block)?.value || "MM/AA";
+  $("[data-card-preview-brand]", prev).textContent = label;
 };
 
 const baseReservationPayload = () => ({
@@ -1123,42 +1300,251 @@ const passesLuhn = (digits) => {
   return sum > 0 && sum % 10 === 0;
 };
 
-const validatedCard = () => {
+const validatedCard = (block, label = "", includeAmount = true) => {
   const fail = (field, message) => {
     invalidateField(field, message);
     return null;
   };
-  const numberField = $("#c-number");
-  const holderField = $("#c-name");
-  const expiryField = $("#c-exp");
-  const cvvField = $("#c-cvv");
+  if (!block) return null;
+  const where = label ? ` do ${label}` : "";
+  const numberField = $("[data-card-number]", block);
+  const holderField = $("[data-card-name]", block);
+  const expiryField = $("[data-card-exp]", block);
+  const cvvField = $("[data-card-cvv]", block);
+  const installmentsField = $("[data-card-installments], [data-retry-installments]", block);
   const number = numberField.value.replace(/\D/g, "");
   const holderName = holderField.value.trim();
   const expiryMatch = expiryField.value.match(/^(\d{2})\/(\d{2})$/);
   const securityCode = cvvField.value.replace(/\D/g, "");
 
   if (number.length < 13 || number.length > 19 || !passesLuhn(number)) {
-    return fail(numberField, "Confira o número do cartão.");
+    return fail(numberField, `Confira o número${where}.`);
   }
-  if (holderName.length < 2) return fail(holderField, "Informe o nome impresso no cartão.");
-  if (!expiryMatch) return fail(expiryField, "Informe a validade no formato MM/AA.");
+  if (holderName.length < 2) return fail(holderField, `Informe o nome impresso${where}.`);
+  if (!expiryMatch) return fail(expiryField, `Informe a validade${where} no formato MM/AA.`);
 
   const expirationMonth = Number(expiryMatch[1]);
   const expirationYear = 2000 + Number(expiryMatch[2]);
   const expiresAt = new Date(expirationYear, expirationMonth, 0, 23, 59, 59);
   if (expirationMonth < 1 || expirationMonth > 12 || expiresAt < new Date()) {
-    return fail(expiryField, "O cartão está vencido ou a validade é inválida.");
+    return fail(expiryField, `O ${label || "cartão"} está vencido ou a validade é inválida.`);
   }
   if (securityCode.length < 3 || securityCode.length > 4) {
-    return fail(cvvField, "Confira o código de segurança (CVV).");
+    return fail(cvvField, `Confira o código de segurança${where} (CVV).`);
   }
 
-  return { number, holderName, expirationMonth, expirationYear, securityCode };
+  const card = {
+    number,
+    holderName,
+    expirationMonth,
+    expirationYear,
+    securityCode,
+    installments: Number(installmentsField?.value) || 1
+  };
+  if (includeAmount && paymentCardCount === 2) {
+    const index = Number(block.dataset.cardBlock);
+    const amount = parseMoney(splitAmountInput(index)?.value);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return fail(splitAmountInput(index), `Informe o valor do cartão ${index}.`);
+    }
+    card.amount = amount;
+  }
+  return card;
+};
+
+const updateSplitSummary = () => {
+  const box = $("[data-split-summary]");
+  const button = $("#pay-btn");
+  if (paymentCardCount !== 2) {
+    if (box) box.hidden = true;
+    if (button && !paymentBusy && !partialSession) button.disabled = false;
+    return true;
+  }
+  if (cardStep !== "amounts") {
+    if (box) box.hidden = true;
+    if (button && !paymentBusy && !partialSession) button.disabled = false;
+    return true;
+  }
+
+  if (box) box.hidden = false;
+  const parts = splitParts();
+  const total = cartTotal();
+  const sum = parts.reduce((value, part) => value + (Number.isFinite(part) ? part : 0), 0);
+  const filled = parts.every((part) => Number.isFinite(part) && part > 0);
+  const differenceCents = toCents(sum) - toCents(total);
+  const belowMinimum = parts.some((part) => Number.isFinite(part) && part > 0 && toCents(part) < toCents(MIN_CARD_AMOUNT));
+  const sumElement = $("[data-split-sum]");
+  const totalElement = $("[data-split-total]");
+  const message = $("[data-split-message]");
+  if (sumElement) sumElement.textContent = brl(sum);
+  if (totalElement) totalElement.textContent = brl(total);
+
+  let valid = false;
+  if (!filled) {
+    if (message) { message.textContent = "Informe o valor de cada cartão."; message.className = ""; }
+  } else if (belowMinimum) {
+    if (message) {
+      message.textContent = `Cada cartão precisa ter pelo menos ${brl(MIN_CARD_AMOUNT)}.`;
+      message.className = "is-error";
+    }
+  } else if (differenceCents === 0) {
+    valid = true;
+    if (message) { message.textContent = "Os valores conferem com o total da reserva."; message.className = "is-ok"; }
+  } else if (differenceCents > 0) {
+    if (message) { message.textContent = `A soma passa ${brl(differenceCents / 100)} do total.`; message.className = "is-error"; }
+  } else if (message) {
+    message.textContent = `Faltam ${brl(Math.abs(differenceCents) / 100)} para fechar o total.`;
+    message.className = "is-error";
+  }
+  if (button && !paymentBusy && !partialSession) button.disabled = !valid;
+  return valid;
+};
+
+const setPaymentBusy = (busy, text) => {
+  paymentBusy = busy;
+  const button = $("#pay-btn");
+  if (!button) return;
+  button.disabled = busy;
+  const label = $(".label", button);
+  if (label && text) label.innerHTML = busy ? `<span class="spinner"></span> ${text}` : escapeHTML(text);
+  if (!busy) updateSplitSummary();
+};
+
+const responseError = (response, data, fallback) => {
+  const error = new Error(data?.error || fallback);
+  error.status = response.status;
+  if (data?.partial) error.partial = data.partial;
+  return error;
+};
+
+const showPartialPayment = (partial) => {
+  partialSession = { ...(partialSession || {}), ...partial };
+  const title = $("[data-partial-title]");
+  const reason = $("[data-partial-reason]");
+  if (title) title.textContent = `O cartão ${partialSession.failedCard || 2} não foi aprovado`;
+  if (reason) reason.textContent = partialSession.reason || "A operadora não autorizou a transação.";
+
+  const status = $("[data-partial-status]");
+  if (status) {
+    const approved = Array.isArray(partialSession.approved) ? partialSession.approved : [];
+    status.innerHTML = `${approved.map((charge) => `
+      <div class="charge-status">
+        <span>Cartão ${charge.card} · ${charge.installments > 1 ? `${charge.installments}x` : "à vista"}</span>
+        <strong>${brl(charge.amount)}</strong>
+        <small>Reservado, aguardando o restante</small>
+      </div>`).join("")}
+      <div class="charge-status is-pending">
+        <span>Falta pagar</span>
+        <strong>${brl(partialSession.pendingAmount)}</strong>
+        <small>Informe outro cartão abaixo</small>
+      </div>`;
+  }
+
+  fillInstallments($("[data-retry-installments]"), Number(partialSession.pendingAmount) || 0);
+  const support = $("[data-partial-support]");
+  if (support) {
+    const approvedAmount = partialSession.approved?.[0]?.amount || 0;
+    const message = `Olá! Tentei uma reserva na Villa Zanotto e o cartão ${partialSession.failedCard || 2} não foi aprovado. `
+      + `Ficou ${brl(approvedAmount)} reservado no outro cartão e preciso de ajuda para concluir ou liberar o valor.`;
+    support.href = `https://wa.me/5564984398408?text=${encodeURIComponent(message)}`;
+  }
+  setPaymentBusy(false, "Pagar e reservar");
+  syncCardUI();
+  updatePaymentHeading();
+  refreshIcons();
+  notifyEmbedView(3, "payment:pay:card:partial");
+  $("[data-partial-payment]")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+};
+
+const resetCardFields = () => {
+  $$('[data-card-block] [data-card-number], [data-card-block] [data-card-name], [data-card-block] [data-card-exp], [data-card-block] [data-card-cvv]').forEach((field) => {
+    field.value = "";
+  });
+  cardBlocks().forEach(updateCardPreview);
+};
+
+const hidePartialPayment = (resetFlow = false) => {
+  partialSession = null;
+  if (resetFlow) {
+    resetCardFields();
+    cardStep = paymentCardCount === 2 ? "amounts" : "1";
+  }
+  if (resetFlow && paymentCardCount === 2) {
+    goToCardStep("amounts");
+    return;
+  }
+  syncCardUI();
+  updateSplitSummary();
+  updatePaymentHeading();
+  updateCardSubmitLabel();
+};
+
+const submitRetryCard = async () => {
+  if (!partialSession?.sessionId) return;
+  const block = $("[data-retry-card]");
+  const card = validatedCard(block, "novo cartão", false);
+  if (!card) return;
+  const button = $("[data-retry-submit]");
+  button.disabled = true;
+  button.innerHTML = '<span class="spinner"></span> Processando...';
+  clearNotice();
+  try {
+    const response = await fetch(`${API_BASE}/checkout/retry-card`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: partialSession.sessionId, card })
+    });
+    const data = await readJSON(response);
+    if (!response.ok) throw responseError(response, data, "Não foi possível concluir o pagamento.");
+    hidePartialPayment();
+    renderSuccess(data);
+  } catch (error) {
+    showNotice(error.message);
+    if (error.status === 410) hidePartialPayment(true);
+    else if (error.partial) showPartialPayment(error.partial);
+  } finally {
+    if (partialSession) {
+      button.disabled = false;
+      button.innerHTML = '<i data-lucide="credit-card" aria-hidden="true"></i> Pagar restante e concluir';
+      refreshIcons();
+    }
+  }
+};
+
+const cancelPartialPayment = async () => {
+  if (!partialSession?.sessionId) return;
+  const button = $("[data-partial-cancel]");
+  button.disabled = true;
+  button.textContent = "Liberando o valor...";
+  try {
+    const response = await fetch(`${API_BASE}/checkout/cancel-split`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: partialSession.sessionId })
+    });
+    const data = await readJSON(response);
+    if (!response.ok) throw responseError(response, data, "Não foi possível liberar o valor.");
+    if (!data.released) {
+      showNotice("Não foi possível liberar automaticamente. Fale com o suporte e informe os TIDs exibidos.");
+      return;
+    }
+    hidePartialPayment(true);
+    showNotice("Valor liberado. Nenhuma cobrança foi concluída; você pode tentar novamente.", "info");
+  } catch (error) {
+    showNotice(error.message || "Não foi possível liberar o valor. Fale com o suporte.");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Desistir e liberar o valor reservado";
+  }
 };
 
 const submitCheckout = (event) => {
   event.preventDefault();
   clearNotice();
+  if (partialSession) {
+    submitRetryCard();
+    return;
+  }
   if (!cartCount() || !state.search) return goToStep(1);
   // Enter/submit avança as sub-etapas; só paga na última.
   if (payStep === "guest") { if (guestValid()) goToPayStep("pay"); return; }
@@ -1168,32 +1554,60 @@ const submitCheckout = (event) => {
 };
 
 const submitCard = async () => {
-  const card = validatedCard();
-  if (!card) return;
-  const payload = {
-    ...baseReservationPayload(),
-    installments: Number($("#c-inst").value) || 1,
-    card
-  };
-  const btn = $("#pay-btn");
-  btn.disabled = true;
-  btn.querySelector(".label").innerHTML = '<span class="spinner"></span> Processando...';
+  if (paymentCardCount === 2 && cardStep === "amounts") {
+    if (!updateSplitSummary()) {
+      showNotice("Ajuste os valores para somar exatamente o total da reserva.");
+      return;
+    }
+    clearNotice();
+    buildInstallments(cartTotal());
+    goToCardStep("1");
+    return;
+  }
+  if (paymentCardCount === 2 && cardStep === "1") {
+    if (!validatedCard(cardBlock(1), "cartão 1")) return;
+    clearNotice();
+    goToCardStep("2");
+    return;
+  }
+
+  const blocks = paymentCardCount === 2 ? [cardBlock(1), cardBlock(2)] : [cardBlock(1)];
+  const cards = [];
+  for (let index = 0; index < blocks.length; index += 1) {
+    const card = validatedCard(blocks[index], paymentCardCount === 2 ? `cartão ${index + 1}` : "cartão");
+    if (!card) return;
+    cards.push(card);
+  }
+  if (paymentCardCount === 2 && !updateSplitSummary()) {
+    showNotice("Ajuste os valores para somar exatamente o total da reserva.");
+    goToCardStep("amounts");
+    return;
+  }
+
+  setPaymentBusy(true, "Processando...");
   try {
-    const res = await fetch(`${API_BASE}/checkout`, {
+    const response = await fetch(`${API_BASE}/checkout`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        ...baseReservationPayload(),
+        installments: cards[0].installments,
+        // Mantém um cartão compatível com a versão anterior da API. O modo de
+        // dois cartões só aparece quando /config confirma suporte novo.
+        ...(paymentCardCount === 1 ? { card: cards[0] } : {}),
+        cards
+      })
     });
-    const data = await readJSON(res);
-    if (!res.ok) throw new Error(data.error || "Não foi possível concluir o pagamento.");
+    const data = await readJSON(response);
+    if (!response.ok) throw responseError(response, data, "Não foi possível concluir o pagamento.");
     if (data.payment?.captured === false) {
       throw new Error("A reserva foi criada, mas o pagamento ainda precisa de confirmação. Não tente novamente; fale com a recepção e informe o número da reserva.");
     }
     renderSuccess(data);
-  } catch (err) {
-    showNotice(err.message);
-    btn.disabled = false;
-    btn.querySelector(".label").textContent = "Pagar e reservar";
+  } catch (error) {
+    setPaymentBusy(false, "Pagar e reservar");
+    showNotice(error.message);
+    if (error.partial?.sessionId) showPartialPayment(error.partial);
   }
 };
 
@@ -1359,6 +1773,10 @@ const renderSuccess = (data) => {
   currentPix = null;
   notifyEmbedPurchase(data); // antes do clearState(), que zera o carrinho
   clearState();
+  // Os dados dos cartões não ficam no armazenamento e também são removidos da
+  // página assim que a compra termina.
+  resetCardFields();
+  $$("[data-retry-card] input").forEach((field) => { field.value = ""; });
   $("#booking-id").textContent = `Reserva nº ${data.booking_id}`;
 
   // Aviso de e-mail de confirmação
@@ -1371,7 +1789,22 @@ const renderSuccess = (data) => {
   }
 
   const p = data.payment || {};
-  const methodLabel = p.method === "pix" ? "PIX" : `Cartão${p.installments ? ` · ${p.installments}x` : ""}`;
+  const charges = Array.isArray(p.charges) ? p.charges : [];
+  const methodLabel = p.method === "pix"
+    ? "PIX"
+    : charges.length > 1
+      ? `${charges.length} cartões`
+      : `Cartão${p.installments ? ` · ${p.installments}x` : ""}`;
+  const chargesHTML = charges.length > 1 ? `
+    <div class="success-charges">
+      <strong class="success-charges-title">Pagamento dividido</strong>
+      ${charges.map((charge) => `
+        <div class="charge-status">
+          <span>Cartão ${charge.card} · ${charge.installments > 1 ? `${charge.installments}x` : "à vista"}</span>
+          <strong>${brl(charge.amount)}</strong>
+          <small>${charge.status === "captured" ? "Pagamento aprovado" : "Aguardando confirmação"}</small>
+        </div>`).join("")}
+    </div>` : "";
   const bookedRoomNames = (Array.isArray(data.rooms) ? data.rooms : [data.room])
     .filter(Boolean)
     .map((room) => room.name)
@@ -1382,6 +1815,7 @@ const renderSuccess = (data) => {
     <div class="summary-row"><span>Check-in</span><span>${fmtDate(state.search.arrival_date)}</span></div>
     <div class="summary-row"><span>Check-out</span><span>${fmtDate(state.search.departure_date)}</span></div>
     <div class="summary-row"><span>Pagamento</span><span>${methodLabel}</span></div>
+    ${chargesHTML}
     <div class="summary-total"><span>Pago</span><strong>${brl(p.amount || cartTotal())}</strong></div>`;
   goToStep(4);
   refreshIcons();
@@ -1405,7 +1839,7 @@ function persistState() {
       payMethod,
       search: state.search,
       selectedRooms: state.selectedRooms,
-      installments: Number($("#c-inst")?.value) || 1,
+      installments: Number($("[data-card-block=\"1\"] [data-card-installments]")?.value) || 1,
       guest: {
         first: $("#g-first")?.value || "",
         last: $("#g-last")?.value || "",
@@ -1549,7 +1983,8 @@ const restoreState = async () => {
     updateReview();
     buildInstallments(cartTotal());
     if (saved.installments && saved.installments <= INSTALLMENTS_MAX) {
-      $("#c-inst").value = String(saved.installments);
+      const firstInstallments = $("[data-card-block=\"1\"] [data-card-installments]");
+      if (firstInstallments) firstInstallments.value = String(saved.installments);
     }
     goToStep(3);
     setPayMethod(saved.payMethod || "pix");
@@ -1816,10 +2251,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("[data-search-back]")?.addEventListener("click", () => goToSearchStep("dates"));
 
-  $("#c-number").addEventListener("input", (e) => { maskCardNumber(e.target); updateCardPreview(); });
-  $("#c-name").addEventListener("input", updateCardPreview);
-  $("#c-exp").addEventListener("input", (e) => { maskExpiry(e.target); updateCardPreview(); });
-  $("#c-cvv").addEventListener("input", (e) => onlyDigits(e.target));
+  $$('[data-card-number]').forEach((input) => input.addEventListener("input", (event) => {
+    maskCardNumber(event.target);
+    const block = event.target.closest("[data-card-block]");
+    if (block) updateCardPreview(block);
+  }));
+  $$('[data-card-name]').forEach((input) => input.addEventListener("input", (event) => {
+    const block = event.target.closest("[data-card-block]");
+    if (block) updateCardPreview(block);
+  }));
+  $$('[data-card-exp]').forEach((input) => input.addEventListener("input", (event) => {
+    maskExpiry(event.target);
+    const block = event.target.closest("[data-card-block]");
+    if (block) updateCardPreview(block);
+  }));
+  $$('[data-card-cvv]').forEach((input) => input.addEventListener("input", (event) => onlyDigits(event.target)));
 
   // Máscaras dos dados do hóspede
   $("#g-phone").addEventListener("input", (e) => maskPhone(e.target));
@@ -1828,7 +2274,6 @@ document.addEventListener("DOMContentLoaded", () => {
     card.addEventListener("click", () => setDocType(card.dataset.doctype));
   });
   syncDocumentInputMode(); // aplica placeholder/inputmode do tipo inicial
-  syncDocumentInputMode();
   $$("input, select").forEach((field) => {
     const clearInvalid = () => field.removeAttribute("aria-invalid");
     field.addEventListener("input", clearInvalid);
@@ -1839,12 +2284,62 @@ document.addEventListener("DOMContentLoaded", () => {
   ["#g-first", "#g-last", "#g-phone", "#g-email", "#g-doctype", "#g-doc"].forEach((sel) => {
     $(sel)?.addEventListener("input", persistState);
   });
-  $("#c-inst")?.addEventListener("change", persistState);
+  $("[data-card-block=\"1\"] [data-card-installments]")?.addEventListener("change", persistState);
 
   $("#checkout-form").addEventListener("submit", submitCheckout);
 
   // Sub-etapa 1: escolha da forma de pagamento (PIX / Cartão)
   $$("[data-pay-method]").forEach((t) => t.addEventListener("click", () => setPayMethod(t.dataset.payMethod)));
+
+  $$("[data-card-count]").forEach((button) => {
+    button.addEventListener("click", () => setPaymentCardCount(button.dataset.cardCount));
+  });
+
+  // Ao informar um lado da divisão, o outro completa o restante. A soma é
+  // conferida novamente antes de avançar e também pelo backend.
+  let syncingSplitAmounts = false;
+  $$("[data-split-amount]").forEach((input) => {
+    input.addEventListener("input", () => {
+      if (!syncingSplitAmounts && paymentCardCount === 2) {
+        const typed = parseMoney(input.value);
+        const other = $$("[data-split-amount]").find((candidate) => candidate !== input);
+        if (other && Number.isFinite(typed)) {
+          const remainder = Math.max(0, toCents(cartTotal()) - toCents(typed));
+          syncingSplitAmounts = true;
+          other.value = (remainder / 100).toFixed(2).replace(".", ",");
+          syncingSplitAmounts = false;
+        }
+      }
+      updateSplitSummary();
+      buildInstallments(cartTotal());
+    });
+    input.addEventListener("blur", () => {
+      if (paymentCardCount !== 2 || cardStep !== "amounts") return;
+      const inputs = [splitAmountInput(1), splitAmountInput(2)];
+      const values = inputs.map((field) => parseMoney(field?.value));
+      if (values.some((value) => !Number.isFinite(value))) return;
+      const totalCents = toCents(cartTotal());
+      const minimumCents = toCents(MIN_CARD_AMOUNT);
+      if (totalCents < minimumCents * 2) return;
+      const cents = values.map(toCents);
+      const lowIndex = cents.findIndex((value) => value < minimumCents);
+      if (lowIndex < 0) return;
+      const otherIndex = lowIndex === 0 ? 1 : 0;
+      syncingSplitAmounts = true;
+      inputs[lowIndex].value = (minimumCents / 100).toFixed(2).replace(".", ",");
+      inputs[otherIndex].value = ((totalCents - minimumCents) / 100).toFixed(2).replace(".", ",");
+      syncingSplitAmounts = false;
+      showNotice(
+        `Ajustamos o cartão ${lowIndex + 1} para o mínimo de ${brl(MIN_CARD_AMOUNT)} e completamos o restante no outro cartão.`,
+        "info"
+      );
+      updateSplitSummary();
+      buildInstallments(cartTotal());
+    });
+  });
+
+  $("[data-retry-submit]")?.addEventListener("click", submitRetryCard);
+  $("[data-partial-cancel]")?.addEventListener("click", cancelPartialPayment);
 
   // Retoma de onde o usuário parou (se houver); senão, começa no PIX.
   restoreState().then((restored) => { if (!restored) setPayMethod("pix"); });
@@ -1855,7 +2350,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (target === "pay" && !guestValid()) return;
     goToPayStep(target);
   }));
-  $$("[data-payback]").forEach((b) => b.addEventListener("click", () => goToPayStep(b.dataset.payback)));
+  $$("[data-payback]").forEach((button) => button.addEventListener("click", () => {
+    if (partialSession) {
+      showNotice("Conclua o valor restante ou libere a autorização antes de voltar.", "info");
+      return;
+    }
+    if (payMethod === "card" && paymentCardCount === 2 && cardStep !== "amounts") {
+      clearNotice();
+      goToCardStep(cardStep === "2" ? "1" : "amounts");
+      return;
+    }
+    goToPayStep(button.dataset.payback);
+  }));
 
   // Copiar o código PIX (copia e cola)
   $("[data-pix-copy]")?.addEventListener("click", async () => {

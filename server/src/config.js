@@ -91,6 +91,9 @@ export const config = {
     // habilitado, enviar causa returnCode 63. Só envia se REDE_SEND_SOFT_DESCRIPTOR=true.
     sendSoftDescriptor: process.env.REDE_SEND_SOFT_DESCRIPTOR === "true",
     maxInstallments: Math.min(12, Math.max(1, Math.floor(Number(process.env.MAX_INSTALLMENTS) || 4))),
+    // Piso por cartão no pagamento dividido. A Rede rejeita valores muito
+    // baixos; a variável permite ajustar o contrato sem novo deploy de código.
+    minCardAmount: Math.max(0.01, Number(process.env.MIN_CARD_AMOUNT) || 5),
     webhookToken: process.env.REDE_WEBHOOK_TOKEN || "",
 
     // Modo simulação: NÃO chama a Rede; finge pagamento aprovado.

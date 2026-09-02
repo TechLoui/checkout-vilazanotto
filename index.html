@@ -28,10 +28,10 @@
       href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap"
       rel="stylesheet"
     >
-    <link rel="stylesheet" href="styles.css?v=20260828-9">
+    <link rel="stylesheet" href="styles.css?v=20260902-10">
 
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-    <script src="site.js?v=20260901-5" defer></script>
+    <script src="site.js?v=20260902-6" defer></script>
     <!-- Meta Pixel Code -->
     <script>
     !function(f,b,e,v,n,t,s)
@@ -594,7 +594,7 @@
           <div class="reserve-frame-wrap" data-reveal>
             <iframe
               class="reserve-frame"
-              src="checkout.html?embed=1"
+              src="checkout.html?embed=1&amp;v=20260902-1"
               title="Motor de reservas da Villa Zanotto Piri"
               data-reserve-frame
               scrolling="no"
@@ -714,6 +714,25 @@
         <span>Villa Zanotto Piri · Pirenópolis, Goiás</span>
       </div>
     </footer>
+
+    <!-- Espelho do carrinho do motor embutido. No celular ele fica preso à
+         viewport da página principal, sem tirar o hóspede do formulário. -->
+    <aside class="reserve-selection-bar" data-reserve-selection-bar hidden aria-live="polite">
+      <div class="reserve-selection-summary">
+        <strong data-reserve-selection-count>1 acomodação selecionada</strong>
+        <span data-reserve-selection-total>—</span>
+      </div>
+      <div class="reserve-selection-actions">
+        <button type="button" class="button button-outline" data-reserve-selection-alter>
+          <i data-lucide="arrow-left" aria-hidden="true"></i>
+          Alterar
+        </button>
+        <button type="button" class="button button-primary" data-reserve-selection-continue>
+          Continuar
+          <i data-lucide="arrow-right" aria-hidden="true"></i>
+        </button>
+      </div>
+    </aside>
 
     <nav class="mobile-bar" aria-label="Ações rápidas">
       <a href="https://wa.me/556299890138" target="_blank" rel="noreferrer" aria-label="Conversar pelo WhatsApp" title="WhatsApp">
